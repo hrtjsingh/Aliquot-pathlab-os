@@ -11,6 +11,7 @@ import { useDataSync } from "@/components/data-sync";
 import { transitionOrderStatus } from "@/app/actions/orders";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { HandoverActions } from "@/app/(app)/orders/[id]/handover-actions.client";
+import { isHandoverDone } from "@/lib/workflow";
 
 type WorklistOrder = {
   id: string;
@@ -44,14 +45,12 @@ export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
   async function applyStatus(orderId: string, status: OrderStatus) {
     await patchSnapshot((snapshot) => ({
       ...snapshot,
-      worklist:
-        status === "SENT_TO_CUSTOMER"
+      worklist: isHandoverDone(status)
           ? snapshot.worklist.filter((order) => order.id !== orderId)
           : snapshot.worklist.map((order) => (order.id === orderId ? { ...order, status } : order)),
       dashboard: {
         ...snapshot.dashboard,
-        awaitingHandover:
-          status === "SENT_TO_CUSTOMER"
+        awaitingHandover: isHandoverDone(status)
             ? Math.max(0, (snapshot.dashboard.awaitingHandover ?? 0) - 1)
             : snapshot.dashboard.awaitingHandover,
       },
@@ -108,8 +107,10 @@ export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
                       orderId={o.id}
                       accessionNo={o.accessionNo}
                       phone={o.patient.phone ?? null}
+                      status={o.status}
                       size="sm"
-                      onDone={() => applyStatus(o.id, "SENT_TO_CUSTOMER")}
+                      onSent={() => applyStatus(o.id, "SENT_TO_CUSTOMER")}
+                      onCollected={() => applyStatus(o.id, "COLLECTED_BY_CUSTOMER")}
                     />
                   ) : next ? (
                     <ConfirmDialog

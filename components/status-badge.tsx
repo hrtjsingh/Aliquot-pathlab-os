@@ -11,6 +11,7 @@ const STATUS_VARIANT: Record<OrderStatus, "outline" | "secondary" | "warning" | 
   AUTHORIZED: "success",
   RELEASED: "warning",
   SENT_TO_CUSTOMER: "success",
+  COLLECTED_BY_CUSTOMER: "success",
   AMENDED: "warning",
   CANCELLED: "outline",
 };

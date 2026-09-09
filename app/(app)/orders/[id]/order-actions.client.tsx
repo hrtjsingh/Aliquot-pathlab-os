@@ -7,6 +7,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { markSampleCollectedAndReceived, transitionOrderStatus } from "@/app/actions/orders";
 import { pathologistAuthorize, releaseReport, technologistVerify } from "@/app/actions/results";
 import { HandoverActions } from "./handover-actions.client";
+import { isCustomerVisibleReport, isHandoverDone } from "@/lib/workflow";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { useDataSync } from "@/components/data-sync";
 
@@ -175,21 +176,38 @@ export function OrderActions({
     );
   }
 
-  if (status === "RELEASED") {
+  if (isCustomerVisibleReport(status)) {
     return (
       <HandoverActions
         orderId={orderId}
         accessionNo={accessionNo}
         phone={phone ?? null}
-        onDone={async () => {
+        status={status}
+        onSent={async () => {
           await patchSnapshot((snapshot) => ({
             ...snapshot,
             worklist: snapshot.worklist.filter((order) => order.id !== orderId),
             dashboard: {
               ...snapshot.dashboard,
-              awaitingHandover: Math.max(0, (snapshot.dashboard.awaitingHandover ?? 0) - 1),
+              awaitingHandover: Math.max(0, (snapshot.dashboard.awaitingHandover ?? 0) - (status === "RELEASED" ? 1 : 0)),
               recent: snapshot.dashboard.recent.map((order) =>
-                order.id === orderId ? { ...order, status: "SENT_TO_CUSTOMER" } : order
+                order.id === orderId && !isHandoverDone(order.status as OrderStatus)
+                  ? { ...order, status: "SENT_TO_CUSTOMER" }
+                  : order
+              ),
+            },
+          }));
+          refresh();
+        }}
+        onCollected={async () => {
+          await patchSnapshot((snapshot) => ({
+            ...snapshot,
+            worklist: snapshot.worklist.filter((order) => order.id !== orderId),
+            dashboard: {
+              ...snapshot.dashboard,
+              awaitingHandover: Math.max(0, (snapshot.dashboard.awaitingHandover ?? 0) - (status === "RELEASED" ? 1 : 0)),
+              recent: snapshot.dashboard.recent.map((order) =>
+                order.id === orderId ? { ...order, status: "COLLECTED_BY_CUSTOMER" } : order
               ),
             },
           }));

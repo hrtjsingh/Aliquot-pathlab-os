@@ -21,6 +21,7 @@ const SHORT: Record<OrderStatus, string> = {
   AUTHORIZED: "Authorized",
   RELEASED: "Released",
   SENT_TO_CUSTOMER: "Sent",
+  COLLECTED_BY_CUSTOMER: "Collected",
   AMENDED: "Amended",
   CANCELLED: "Cancelled",
 };
@@ -34,13 +35,14 @@ export function WorkflowStepper({ status }: { status: OrderStatus }) {
     );
   }
 
-  const currentIndex = STEPS.indexOf(status);
+  const handover = status === "SENT_TO_CUSTOMER" || status === "COLLECTED_BY_CUSTOMER";
+  const currentIndex = handover ? STEPS.length - 1 : STEPS.indexOf(status);
 
   return (
     <ol className="flex flex-wrap items-center gap-1.5 text-xs">
       {STEPS.map((step, index) => {
-        const done = index < currentIndex;
-        const current = index === currentIndex;
+        const done = handover || index < currentIndex;
+        const current = !handover && index === currentIndex;
         return (
           <li key={step} className="flex items-center gap-1.5">
             {index > 0 ? <span className="text-border">/</span> : null}
@@ -57,6 +59,12 @@ export function WorkflowStepper({ status }: { status: OrderStatus }) {
           </li>
         );
       })}
+      {handover ? (
+        <li className="flex items-center gap-1.5">
+          <span className="text-border">/</span>
+          <span className="rounded-md bg-accent/15 px-2 py-1 font-medium text-accent">{SHORT[status]}</span>
+        </li>
+      ) : null}
     </ol>
   );
 }

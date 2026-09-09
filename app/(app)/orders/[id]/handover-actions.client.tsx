@@ -1,32 +1,40 @@
 "use client";
 
+import type { OrderStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { markReportCollected, sendReportOnWhatsApp } from "@/app/actions/delivery";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
+import { canMarkCollected } from "@/lib/workflow";
 
 export function HandoverActions({
   orderId,
   accessionNo,
   phone,
+  status,
   size = "default",
-  onDone,
+  onSent,
+  onCollected,
 }: {
   orderId: string;
   accessionNo: string;
   phone: string | null;
+  status: OrderStatus;
   size?: "default" | "sm";
-  onDone?: () => Promise<void> | void;
+  onSent?: () => Promise<void> | void;
+  onCollected?: () => Promise<void> | void;
 }) {
   const phoneLabel = phone?.trim() || "no registered number";
+  const alreadySent = status === "SENT_TO_CUSTOMER" || status === "COLLECTED_BY_CUSTOMER";
+  const showCollect = canMarkCollected(status);
 
   return (
     <div className="flex flex-wrap gap-2">
       <ConfirmDialog
-        title="Send this report on WhatsApp?"
-        description={`Accession ${accessionNo} will be sent to ${phoneLabel}. WhatsApp opens with the patient report link. After you send the message, this order leaves the worklist.`}
+        title={alreadySent ? "Send this report on WhatsApp again?" : "Send this report on WhatsApp?"}
+        description={`Accession ${accessionNo} will be sent to ${phoneLabel}. WhatsApp opens with the patient report link.`}
         confirmLabel="Send on WhatsApp"
-        successMessage="WhatsApp opened with the report link. Marked as sent."
+        successMessage="WhatsApp opened with the report link."
         trigger={
           <Button type="button" size={size}>
             Send on WhatsApp
@@ -35,53 +43,55 @@ export function HandoverActions({
         onConfirm={async () => {
           if (isBrowserOffline()) {
             await enqueueOp({ type: "sendReportOnWhatsApp", orderId });
-            await onDone?.();
+            await onSent?.();
             return { queued: true as const };
           }
           try {
             const result = await sendReportOnWhatsApp(orderId);
-            if (result.ok) await onDone?.();
+            if (result.ok) await onSent?.();
             return result;
           } catch (error) {
             if (isNetworkError(error)) {
               await enqueueOp({ type: "sendReportOnWhatsApp", orderId });
-              await onDone?.();
+              await onSent?.();
               return { queued: true as const };
             }
             throw error;
           }
         }}
       />
-      <ConfirmDialog
-        title="Mark as collected by the customer?"
-        description={`Accession ${accessionNo} was handed over at the counter. It leaves the worklist.`}
-        confirmLabel="Collected by customer"
-        successMessage="Marked as collected."
-        trigger={
-          <Button type="button" size={size} variant="outline">
-            Collected by customer
-          </Button>
-        }
-        onConfirm={async () => {
-          if (isBrowserOffline()) {
-            await enqueueOp({ type: "markReportCollected", orderId });
-            await onDone?.();
-            return { queued: true as const };
+      {showCollect ? (
+        <ConfirmDialog
+          title="Mark as collected by the customer?"
+          description={`Accession ${accessionNo} was handed over at the counter.`}
+          confirmLabel="Collected by customer"
+          successMessage="Marked as collected."
+          trigger={
+            <Button type="button" size={size} variant="outline">
+              Collected by customer
+            </Button>
           }
-          try {
-            const result = await markReportCollected(orderId);
-            if (result.ok) await onDone?.();
-            return result;
-          } catch (error) {
-            if (isNetworkError(error)) {
+          onConfirm={async () => {
+            if (isBrowserOffline()) {
               await enqueueOp({ type: "markReportCollected", orderId });
-              await onDone?.();
+              await onCollected?.();
               return { queued: true as const };
             }
-            throw error;
-          }
-        }}
-      />
+            try {
+              const result = await markReportCollected(orderId);
+              if (result.ok) await onCollected?.();
+              return result;
+            } catch (error) {
+              if (isNetworkError(error)) {
+                await enqueueOp({ type: "markReportCollected", orderId });
+                await onCollected?.();
+                return { queued: true as const };
+              }
+              throw error;
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }

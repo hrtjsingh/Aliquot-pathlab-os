@@ -4,7 +4,8 @@ import { OrderStatus } from "@prisma/client";
  * Order workflow state machine, exactly per spec:
  * Order Created -> Sample Collected -> Sample Received -> Result Entry
  *   -> Technologist Verification -> Pathologist Authorization -> Released
- *   -> Sent to customer / collected -> Reprint / Amend (audit-preserving branch)
+ *   -> Sent (WhatsApp) and/or Collected at the counter
+ *   -> Reprint / Amend (audit-preserving branch)
  *
  * ALLOWED_TRANSITIONS is the single source of truth — every status change in
  * the app must go through canTransition() so an out-of-order transition
@@ -18,8 +19,9 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   RESULT_ENTRY: [OrderStatus.TECH_VERIFIED, OrderStatus.CANCELLED],
   TECH_VERIFIED: [OrderStatus.AUTHORIZED, OrderStatus.RESULT_ENTRY], // pathologist can bounce back for re-entry
   AUTHORIZED: [OrderStatus.RELEASED],
-  RELEASED: [OrderStatus.SENT_TO_CUSTOMER, OrderStatus.AMENDED],
-  SENT_TO_CUSTOMER: [OrderStatus.AMENDED],
+  RELEASED: [OrderStatus.SENT_TO_CUSTOMER, OrderStatus.COLLECTED_BY_CUSTOMER, OrderStatus.AMENDED],
+  SENT_TO_CUSTOMER: [OrderStatus.COLLECTED_BY_CUSTOMER, OrderStatus.AMENDED],
+  COLLECTED_BY_CUSTOMER: [OrderStatus.AMENDED],
   AMENDED: [], // amendments create a NEW linked Order (see schema: amendsOrderId) — original stays immutable
   CANCELLED: [],
 };
@@ -36,7 +38,8 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   TECH_VERIFIED: "Technologist Verified",
   AUTHORIZED: "Pathologist Authorized",
   RELEASED: "Released",
-  SENT_TO_CUSTOMER: "Sent / collected",
+  SENT_TO_CUSTOMER: "Sent",
+  COLLECTED_BY_CUSTOMER: "Collected",
   AMENDED: "Amended",
   CANCELLED: "Cancelled",
 };
@@ -51,10 +54,26 @@ export const WORKLIST_STATUSES: OrderStatus[] = [
   OrderStatus.RELEASED,
 ];
 
-export const CUSTOMER_REPORT_STATUSES: OrderStatus[] = [OrderStatus.RELEASED, OrderStatus.SENT_TO_CUSTOMER];
+export const CUSTOMER_REPORT_STATUSES: OrderStatus[] = [
+  OrderStatus.RELEASED,
+  OrderStatus.SENT_TO_CUSTOMER,
+  OrderStatus.COLLECTED_BY_CUSTOMER,
+];
 
 export function isCustomerVisibleReport(status: OrderStatus) {
   return CUSTOMER_REPORT_STATUSES.includes(status);
+}
+
+export function canSendReportWhatsApp(status: OrderStatus) {
+  return isCustomerVisibleReport(status);
+}
+
+export function canMarkCollected(status: OrderStatus) {
+  return status === OrderStatus.RELEASED || status === OrderStatus.SENT_TO_CUSTOMER;
+}
+
+export function isHandoverDone(status: OrderStatus) {
+  return status === OrderStatus.SENT_TO_CUSTOMER || status === OrderStatus.COLLECTED_BY_CUSTOMER;
 }
 
 // Which role is permitted to *perform* each transition.
@@ -66,5 +85,6 @@ export const TRANSITION_ROLE: Record<string, string[]> = {
   AUTHORIZED: ["PATHOLOGIST", "ADMIN"],
   RELEASED: ["PATHOLOGIST", "ADMIN", "FRONTDESK"],
   SENT_TO_CUSTOMER: ["FRONTDESK", "ADMIN", "PATHOLOGIST", "TECHNOLOGIST"],
+  COLLECTED_BY_CUSTOMER: ["FRONTDESK", "ADMIN", "PATHOLOGIST", "TECHNOLOGIST"],
   CANCELLED: ["ADMIN", "FRONTDESK"],
 };

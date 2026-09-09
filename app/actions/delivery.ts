@@ -6,42 +6,34 @@ import { DeliveryChannel, OrderStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
-import { canTransition, TRANSITION_ROLE } from "@/lib/workflow";
+import { canMarkCollected, canSendReportWhatsApp, canTransition, TRANSITION_ROLE } from "@/lib/workflow";
 import { absolutePublicReportUrl, ensurePublicReportToken, reportOriginFromHeaderList } from "@/lib/public-report";
 import { toWhatsAppDigits, whatsappClickToChatUrl } from "@/lib/phone";
 import { transitionOrderStatus } from "@/app/actions/orders";
 
-async function requireHandover(orderId: string) {
+async function loadHandoverOrder(orderId: string) {
   const user = await requireWritableLab();
-  const allowed = TRANSITION_ROLE.SENT_TO_CUSTOMER ?? [];
-  if (!allowed.includes(user.role) && user.role !== "ADMIN") {
-    throw new Error("Your role cannot send or collect this report.");
-  }
   const order = await prisma.order.findFirst({
     where: { id: orderId, vendorId: user.vendorId },
     include: { patient: true, branch: { select: { name: true } } },
   });
   if (!order) throw new Error("Order was not found in this lab.");
-  if (order.status !== OrderStatus.RELEASED) {
-    return { ok: false as const, error: "Only a released report can be sent or collected." };
-  }
-  if (!canTransition(order.status, OrderStatus.SENT_TO_CUSTOMER)) {
-    return { ok: false as const, error: "This accession cannot move to sent / collected." };
-  }
-  return { ok: true as const, user, order };
+  return { user, order };
 }
 
-async function finishHandover(orderId: string) {
-  await transitionOrderStatus(orderId, OrderStatus.SENT_TO_CUSTOMER);
-  revalidatePath("/worklist");
-  revalidatePath("/dashboard");
-  revalidatePath(`/orders/${orderId}`);
+function assertHandoverRole(role: string, to: "SENT_TO_CUSTOMER" | "COLLECTED_BY_CUSTOMER") {
+  const allowed = TRANSITION_ROLE[to] ?? [];
+  if (!allowed.includes(role) && role !== "ADMIN") {
+    throw new Error("Your role cannot send or collect this report.");
+  }
 }
 
 export async function sendReportOnWhatsApp(orderId: string) {
-  const ready = await requireHandover(orderId);
-  if (!ready.ok) return ready;
-  const { user, order } = ready;
+  const { user, order } = await loadHandoverOrder(orderId);
+  assertHandoverRole(user.role, "SENT_TO_CUSTOMER");
+  if (!canSendReportWhatsApp(order.status)) {
+    return { ok: false as const, error: "Release the report before sending it on WhatsApp." };
+  }
 
   const digits = toWhatsAppDigits(order.patient.phone);
   if (!digits) {
@@ -77,14 +69,22 @@ export async function sendReportOnWhatsApp(orderId: string) {
     after: { target: digits, accessionNo: order.accessionNo },
   });
 
-  await finishHandover(order.id);
+  if (canTransition(order.status, OrderStatus.SENT_TO_CUSTOMER)) {
+    await transitionOrderStatus(order.id, OrderStatus.SENT_TO_CUSTOMER);
+  }
+
+  revalidatePath("/worklist");
+  revalidatePath("/dashboard");
+  revalidatePath(`/orders/${order.id}`);
   return { ok: true as const, whatsappUrl: whatsappClickToChatUrl(digits, text), phone: digits };
 }
 
 export async function markReportCollected(orderId: string) {
-  const ready = await requireHandover(orderId);
-  if (!ready.ok) return ready;
-  const { user, order } = ready;
+  const { user, order } = await loadHandoverOrder(orderId);
+  assertHandoverRole(user.role, "COLLECTED_BY_CUSTOMER");
+  if (!canMarkCollected(order.status)) {
+    return { ok: false as const, error: "This report is already marked collected, or it is not released yet." };
+  }
 
   const delivery = await prisma.reportDelivery.create({
     data: {
@@ -106,6 +106,9 @@ export async function markReportCollected(orderId: string) {
     after: { accessionNo: order.accessionNo },
   });
 
-  await finishHandover(order.id);
+  await transitionOrderStatus(order.id, OrderStatus.COLLECTED_BY_CUSTOMER);
+  revalidatePath("/worklist");
+  revalidatePath("/dashboard");
+  revalidatePath(`/orders/${order.id}`);
   return { ok: true as const };
 }

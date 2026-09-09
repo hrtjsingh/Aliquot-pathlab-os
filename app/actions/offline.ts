@@ -90,7 +90,7 @@ export async function getLabSnapshot(): Promise<LabSnapshot> {
       },
     }),
     prisma.order.count({
-      where: { vendorId, reportedAt: { gte: startOfToday }, status: { in: ["RELEASED", "SENT_TO_CUSTOMER"] } },
+      where: { vendorId, reportedAt: { gte: startOfToday }, status: { in: ["RELEASED", "SENT_TO_CUSTOMER", "COLLECTED_BY_CUSTOMER"] } },
     }),
     prisma.order.findMany({
       where: { vendorId },

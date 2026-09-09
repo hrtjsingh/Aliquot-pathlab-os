@@ -24,8 +24,9 @@ const NEXT_STEP: Record<string, string> = {
   RESULT_ENTRY: "Review flags, log any critical call-back, then submit for technologist verification.",
   TECH_VERIFIED: "A pathologist reviews and authorizes the report.",
   AUTHORIZED: "Release the report so it can be printed, sent on WhatsApp, or collected.",
-  RELEASED: "The report is on the worklist until it is sent on WhatsApp to the patient’s registered number or marked collected at the counter. Patients can also scan the QR on the PDF.",
-  SENT_TO_CUSTOMER: "This report was sent or collected. Open the lab preview to reprint. An amendment starts a new accession.",
+  RELEASED: "The report stays on the worklist until it is sent or collected. Send it on WhatsApp to the patient’s registered number, or mark it collected at the counter. You can send on WhatsApp again after that.",
+  SENT_TO_CUSTOMER: "This report was sent on WhatsApp. You can send it again. Mark it collected if the customer picked up a print.",
+  COLLECTED_BY_CUSTOMER: "This report was collected at the counter. You can still send it on WhatsApp to the patient’s registered number.",
   AMENDED: "This accession was amended. Open the linked new order for the current results.",
   CANCELLED: "This order is cancelled and cannot move forward.",
 };

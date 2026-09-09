@@ -763,7 +763,10 @@ async function pushLabRow<T extends { id: string; updatedAt: Date }>(
 ) {
   if (existing && existing.updatedAt > item.updatedAt) {
     const protectedStatus =
-      existing.status === "AUTHORIZED" || existing.status === "RELEASED" || existing.status === "SENT_TO_CUSTOMER";
+      existing.status === "AUTHORIZED" ||
+      existing.status === "RELEASED" ||
+      existing.status === "SENT_TO_CUSTOMER" ||
+      existing.status === "COLLECTED_BY_CUSTOMER";
     if (protectedStatus) {
       conflicts.push({
         entityType,

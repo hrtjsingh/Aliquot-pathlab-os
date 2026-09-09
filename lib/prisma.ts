@@ -5,7 +5,7 @@ const globalForPrisma = globalThis as unknown as {
   prismaBillingGen?: number;
 };
 
-const BILLING_CLIENT_GEN = 4;
+const BILLING_CLIENT_GEN = 5;
 
 function datasourceUrl() {
   const url = process.env.DATABASE_URL?.trim();
