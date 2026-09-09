@@ -1,0 +1,148 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  color-scheme: light;
+  --radius: 0.5rem;
+
+  /* Clinical light: cool paper, ink navy, teal accent */
+  --background: #f4f6f7;
+  --foreground: #14181c;
+  --card: #ffffff;
+  --card-foreground: #14181c;
+  --popover: #ffffff;
+  --popover-foreground: #14181c;
+
+  --primary: #1c3f52;
+  --primary-foreground: #f6f7f7;
+  --secondary: #e7ebec;
+  --secondary-foreground: #1c3f52;
+  --muted: #eef1f2;
+  --muted-foreground: #4f5c66;
+  --accent: #0f766e;
+  --accent-foreground: #ffffff;
+
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+  --warning: #a15c00;
+  --warning-foreground: #ffffff;
+  --success: #1e6e46;
+  --success-foreground: #ffffff;
+
+  --border: #d7dddf;
+  --input: #d7dddf;
+  --ring: #0f766e;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #14181c;
+  --sidebar-muted: #5b6670;
+  --sidebar-accent: #eef4f4;
+  --sidebar-border: #e3e8e9;
+  --brand: #1c3f52;
+  --brand-foreground: #f4f6f7;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: #0c1216;
+  --foreground: #e8ecee;
+  --card: #141b20;
+  --card-foreground: #e8ecee;
+  --popover: #171f25;
+  --popover-foreground: #e8ecee;
+  --primary: #7ec4d4;
+  --primary-foreground: #0c1216;
+  --secondary: #1c262c;
+  --secondary-foreground: #e8ecee;
+  --muted: #1a2329;
+  --muted-foreground: #9aa7ae;
+  --accent: #2dd4bf;
+  --accent-foreground: #0c1216;
+  --destructive: #f2554a;
+  --destructive-foreground: #0c1216;
+  --warning: #e0a021;
+  --warning-foreground: #0c1216;
+  --success: #4ade80;
+  --success-foreground: #0c1216;
+  --border: #2a353c;
+  --input: #2a353c;
+  --ring: #2dd4bf;
+  --sidebar: #0a1014;
+  --sidebar-foreground: #e8ecee;
+  --sidebar-muted: #93a1a8;
+  --sidebar-accent: #162026;
+  --sidebar-border: #1e2a31;
+  --brand: #1c3f52;
+  --brand-foreground: #f4f6f7;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply h-full;
+  }
+  body {
+    @apply min-h-full bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+  .tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

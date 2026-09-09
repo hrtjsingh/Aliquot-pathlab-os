@@ -1,0 +1,252 @@
+"use server";
+
+import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/rbac";
+import { logAudit } from "@/lib/audit";
+import { resolveReferenceRange, formatRangeText, ageInDays } from "@/lib/reference-range";
+import { computeFlag, computeDelta, isAutoVerifyEligible, requiresCriticalCallback } from "@/lib/flagging";
+import { runCalcRule } from "@/lib/calc-engine";
+import { generateInterpretiveComments } from "@/lib/interpretive-comments";
+import { OrderStatus, ResultStatus } from "@prisma/client";
+import { revalidatePath } from "next/cache";
+
+const DELTA_CONFIG = { pctThreshold: 30 }; // lab-configurable; flat 30% default per common LIS practice
+
+async function patientRangeCtx(orderId: string) {
+  const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { patient: true } });
+  const days = ageInDays(order.patient.dob, order.patient.ageYears, order.patient.ageMonths);
+  return {
+    order,
+    days,
+    rangeCtx: {
+      gender: order.patient.gender,
+      ageDays: days,
+      isPregnant: order.patient.isPregnant,
+      pregnancyTrimester: order.patient.pregnancyWeeks ? Math.ceil(order.patient.pregnancyWeeks / 13) : null,
+    },
+    calcCtx: {
+      gender: order.patient.gender,
+      ageYears: order.patient.ageYears ?? Math.floor(days / 365.25),
+    },
+  };
+}
+
+/** Save/overwrite one manually-entered (non-derived) result, then re-cascade any derived tests on the order. */
+export async function saveManualResult(params: {
+  orderId: string;
+  testId: string;
+  numericValue?: number | null;
+  textValue?: string | null;
+  grossDescription?: string;
+  microscopicDescription?: string;
+  diagnosis?: string;
+  organismPanel?: unknown;
+  qualitativeResult?: string;
+  ctValue?: number;
+}) {
+  const user = await requireUser();
+  const test = await prisma.test.findUniqueOrThrow({ where: { id: params.testId }, include: { referenceRanges: true, criticalThresholds: true } });
+  const { order, rangeCtx } = await patientRangeCtx(params.orderId);
+
+  const range = resolveReferenceRange(test.referenceRanges, rangeCtx);
+  const critical = test.criticalThresholds.find(
+    (c) => (!c.gender || c.gender === order.patient.gender) && rangeCtx.ageDays >= c.ageMinDays && rangeCtx.ageDays <= c.ageMaxDays
+  ) ?? null;
+
+  const flag = params.numericValue != null ? computeFlag({ numericValue: params.numericValue, range, criticalThreshold: critical }) : "NORMAL";
+
+  // Delta check against this patient's most recent prior RELEASED result for the same test.
+  let deltaFlagged = false;
+  let deltaPrevValue: number | null = null;
+  let deltaPctChange: number | null = null;
+  if (params.numericValue != null) {
+    const prior = await prisma.result.findFirst({
+      where: { testId: test.id, order: { patientId: order.patientId }, status: "RELEASED", numericValue: { not: null } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (prior?.numericValue != null) {
+      const delta = computeDelta(params.numericValue, prior.numericValue, DELTA_CONFIG);
+      deltaFlagged = delta.flagged;
+      deltaPctChange = delta.pctChange;
+      deltaPrevValue = prior.numericValue;
+    }
+  }
+
+  const existing = await prisma.result.findFirst({ where: { orderId: params.orderId, testId: params.testId } });
+  const data = {
+    orderId: params.orderId,
+    testId: params.testId,
+    numericValue: params.numericValue ?? null,
+    textValue: params.textValue ?? null,
+    unit: test.unit,
+    referenceRangeText: formatRangeText(range),
+    flag,
+    deltaFlag: deltaFlagged,
+    deltaPrevValue,
+    deltaPctChange,
+    isDerived: false,
+    status: "ENTERED" as ResultStatus,
+    enteredById: user.userId,
+    enteredAt: new Date(),
+    grossDescription: params.grossDescription ?? null,
+    microscopicDescription: params.microscopicDescription ?? null,
+    diagnosis: params.diagnosis ?? null,
+    organismPanel: params.organismPanel as any,
+    qualitativeResult: params.qualitativeResult ?? null,
+    ctValue: params.ctValue ?? null,
+  };
+
+  const result = existing
+    ? await prisma.result.update({ where: { id: existing.id }, data })
+    : await prisma.result.create({ data });
+
+  await logAudit({ userId: user.userId, orderId: params.orderId, action: "RESULT_ENTERED", entityType: "Result", entityId: result.id, after: result });
+
+  if (order.status === OrderStatus.SAMPLE_RECEIVED) {
+    await prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.RESULT_ENTRY } });
+  }
+
+  await cascadeDerivedResults(params.orderId);
+  revalidatePath(`/orders/${params.orderId}`);
+  return result;
+}
+
+/**
+ * Recompute every derived test on the order whose required inputs are now
+ * present. Runs after every manual entry — cheap at typical panel sizes and
+ * guarantees derived values never go stale relative to their inputs.
+ */
+export async function cascadeDerivedResults(orderId: string) {
+  const { order, rangeCtx, calcCtx } = await patientRangeCtx(orderId);
+  const orderTests = await prisma.orderTest.findMany({
+    where: { orderId },
+    include: { test: { include: { referenceRanges: true, criticalThresholds: true } } },
+  });
+  const existingResults = await prisma.result.findMany({ where: { orderId } });
+  const valueByCode = new Map<string, number | null | undefined>();
+  for (const ot of orderTests) {
+    const r = existingResults.find((res) => res.testId === ot.testId);
+    valueByCode.set(ot.test.code, r?.numericValue ?? null);
+  }
+
+  for (const ot of orderTests) {
+    const test = ot.test;
+    if (!test.isDerived || !test.derivationRule) continue;
+
+    const inputs: Record<string, number | null | undefined> = {};
+    for (const key of Object.keys(Object.fromEntries(valueByCode))) inputs[key] = valueByCode.get(key);
+
+    const calcResult = runCalcRule(test.derivationRule, inputs, calcCtx);
+    if (calcResult.value == null) continue; // inputs not all present yet, or suppressed by precondition — leave unset
+
+    const range = resolveReferenceRange(test.referenceRanges, rangeCtx);
+    const critical = test.criticalThresholds.find(
+      (c) => (!c.gender || c.gender === order.patient.gender) && rangeCtx.ageDays >= c.ageMinDays && rangeCtx.ageDays <= c.ageMaxDays
+    ) ?? null;
+    const flag = computeFlag({ numericValue: calcResult.value, range, criticalThreshold: critical });
+    const rounded = Math.round(calcResult.value * Math.pow(10, test.decimalPrecision)) / Math.pow(10, test.decimalPrecision);
+
+    const existing = existingResults.find((r) => r.testId === test.id);
+    const data = {
+      orderId,
+      testId: test.id,
+      numericValue: rounded,
+      unit: test.unit,
+      referenceRangeText: formatRangeText(range),
+      flag,
+      isDerived: true,
+      status: "ENTERED" as ResultStatus,
+      enteredAt: new Date(),
+    };
+    if (existing) {
+      await prisma.result.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.result.create({ data });
+    }
+    valueByCode.set(test.code, rounded);
+  }
+}
+
+export async function technologistVerify(orderId: string) {
+  const user = await requireUser();
+  if (!["TECHNOLOGIST", "ADMIN"].includes(user.role)) throw new Error("Only a technologist can verify results.");
+
+  const results = await prisma.result.findMany({ where: { orderId } });
+  const anyCritical = results.some((r) => requiresCriticalCallback(r.flag));
+  if (anyCritical) {
+    const called = await prisma.criticalValueCall.findFirst({ where: { orderId } });
+    if (!called) {
+      return { ok: false as const, error: "Critical value(s) present — log the clinician call-back before verifying." };
+    }
+  }
+
+  await prisma.result.updateMany({
+    where: { orderId },
+    data: { status: "TECH_VERIFIED", verifiedById: user.userId, verifiedAt: new Date() },
+  });
+  await prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.TECH_VERIFIED } });
+  await logAudit({ userId: user.userId, orderId, action: "TECH_VERIFIED", entityType: "Order", entityId: orderId });
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true as const };
+}
+
+export async function pathologistAuthorize(orderId: string, pathologistNotesByResultId: Record<string, string>) {
+  const user = await requireUser();
+  if (!["PATHOLOGIST", "ADMIN"].includes(user.role)) throw new Error("Only a pathologist can authorize a report.");
+
+  for (const [resultId, note] of Object.entries(pathologistNotesByResultId)) {
+    if (note) await prisma.result.update({ where: { id: resultId }, data: { pathologistNote: note } });
+  }
+
+  await prisma.result.updateMany({ where: { orderId }, data: { status: "AUTHORIZED" } });
+  await prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.AUTHORIZED, authorizedById: user.userId } });
+  await logAudit({ userId: user.userId, orderId, action: "AUTHORIZED", entityType: "Order", entityId: orderId });
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true as const };
+}
+
+export async function releaseReport(orderId: string) {
+  const user = await requireUser();
+  await prisma.result.updateMany({ where: { orderId }, data: { status: "RELEASED" } });
+  await prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.RELEASED, reportedAt: new Date() } });
+  await logAudit({ userId: user.userId, orderId, action: "REPORT_RELEASED", entityType: "Order", entityId: orderId });
+  revalidatePath(`/orders/${orderId}`);
+  return { ok: true as const };
+}
+
+export async function recordCriticalValueCall(params: {
+  orderId: string;
+  notifiedName: string;
+  notifiedRole?: string;
+  contactMethod: string;
+  confirmationNote?: string;
+}) {
+  const user = await requireUser();
+  const call = await prisma.criticalValueCall.create({
+    data: {
+      orderId: params.orderId,
+      calledById: user.userId,
+      notifiedName: params.notifiedName,
+      notifiedRole: params.notifiedRole,
+      contactMethod: params.contactMethod,
+      confirmationNote: params.confirmationNote,
+    },
+  });
+  await logAudit({ userId: user.userId, orderId: params.orderId, action: "CRITICAL_VALUE_CALLED", entityType: "CriticalValueCall", entityId: call.id, after: call });
+  revalidatePath(`/orders/${params.orderId}`);
+  return call;
+}
+
+/** Suggested interpretive comments for the whole order — pathologist reviews/edits before authorization. */
+export async function suggestInterpretiveComments(orderId: string) {
+  await requireUser();
+  const results = await prisma.result.findMany({ where: { orderId }, include: { test: true } });
+  const values: Record<string, number | null> = {};
+  const ranges: Record<string, { low?: number | null; high?: number | null }> = {};
+  for (const r of results) {
+    values[r.test.code] = r.numericValue;
+    const rr = await prisma.referenceRange.findFirst({ where: { testId: r.testId, isDefault: true } });
+    ranges[r.test.code] = { low: rr?.low, high: rr?.high };
+  }
+  return generateInterpretiveComments(values, ranges);
+}

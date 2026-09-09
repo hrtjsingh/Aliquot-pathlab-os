@@ -1,0 +1,444 @@
+// ============================================================================
+// Pathology Lab LIMS — core data model
+// Postgres via Prisma. Every clinically/legally significant table carries
+// createdAt/updatedAt and is written through the AuditLog (see lib/audit.ts) —
+// never edit result or report rows outside the app layer.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity / RBAC
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN // full config + user management
+  FRONTDESK // registration, billing, sample collection
+  PHLEBOTOMIST // sample collection / accession
+  TECHNOLOGIST // result entry, technical verification
+  PATHOLOGIST // authorization, histopath/cytology diagnosis, amendments
+  BRANCH_MANAGER // cross-branch reporting, no result authority
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  role          Role
+  branchId      String?
+  branch        Branch?  @relation(fields: [branchId], references: [id])
+  signatureUrl  String? // stored digital signature image for report footer
+  registrationNo String? // pathologist council registration number
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  resultsEntered   Result[]        @relation("EnteredBy")
+  resultsVerified  Result[]        @relation("VerifiedBy")
+  ordersAuthorized Order[]         @relation("AuthorizedBy")
+  auditLogs        AuditLog[]
+  criticalCalls    CriticalValueCall[]
+}
+
+model Branch {
+  id           String   @id @default(cuid())
+  name         String
+  code         String   @unique
+  address      String?
+  letterheadUrl String?
+  nablNo       String?
+  isoNo        String?
+  createdAt    DateTime @default(now())
+
+  users        User[]
+  orders       Order[]
+  reportTemplates ReportTemplate[]
+}
+
+// ---------------------------------------------------------------------------
+// Patient master
+// ---------------------------------------------------------------------------
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+model Patient {
+  id            String   @id @default(cuid())
+  mrn           String   @unique // medical record number
+  firstName     String
+  lastName      String?
+  dob           DateTime?
+  ageYears      Int? // used when DOB unknown, entered directly at registration
+  ageMonths     Int? // for infants
+  gender        Gender
+  isPregnant    Boolean  @default(false)
+  pregnancyWeeks Int?
+  phone         String?
+  email         String?
+  address       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders        Order[]
+}
+
+// ---------------------------------------------------------------------------
+// Test master, reference ranges, panels
+// ---------------------------------------------------------------------------
+
+enum TestCategory {
+  HEMATOLOGY
+  CLINICAL_CHEMISTRY
+  MICROBIOLOGY
+  SEROLOGY_IMMUNOLOGY
+  COAGULATION
+  URINALYSIS
+  HISTOPATHOLOGY
+  CYTOLOGY
+  MOLECULAR
+  ENDOCRINE
+  OTHER
+}
+
+enum ResultDataType {
+  NUMERIC
+  TEXT // free text (histopath, culture organism name)
+  QUALITATIVE // Positive/Negative/Detected/Not Detected/Reactive...
+  SEMI_QUANTITATIVE // e.g. 1+ / 2+ / 3+, urine dipstick
+  ORGANISM_PANEL // microbiology C&S structured result
+}
+
+model Test {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String
+  shortName       String?
+  category        TestCategory
+  specimenType    String // Serum, Whole Blood EDTA, Urine, etc.
+  method          String?
+  loincCode       String?
+  unit            String? // default/conventional unit
+  altUnit         String? // SI unit, if different
+  unitConversionFactor Float? // multiply conventional value by this to get altUnit
+  decimalPrecision Int     @default(2)
+  dataType        ResultDataType @default(NUMERIC)
+  turnaroundHours Int?    // expected TAT, used for worklist SLA flags
+  price           Decimal? @db.Decimal(10, 2)
+  isDerived       Boolean  @default(false) // computed by the calc engine, not entered
+  derivationRule  String? // key into lib/calc-engine.ts rule registry
+  autoVerifyEligible Boolean @default(false) // can auto-release if in-range & no delta flag
+  description     String? // clinical profile: what the test measures and when it is used
+  collectionNotes String? // fasting, tube type, handling
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  referenceRanges ReferenceRange[]
+  panelTests      PanelTest[]
+  orderTests      OrderTest[]
+  results         Result[]
+  criticalThresholds CriticalThreshold[]
+}
+
+// Reference ranges resolve by test + age band + gender + (optional) condition.
+// Resolution order in lib/reference-range.ts: exact age+gender+pregnancy match
+// -> age+gender match -> gender-only match -> default adult fallback.
+model ReferenceRange {
+  id            String   @id @default(cuid())
+  testId        String
+  test          Test     @relation(fields: [testId], references: [id])
+  gender        Gender? // null = applies to all genders
+  ageMinDays    Int      @default(0)
+  ageMaxDays    Int      @default(43800) // ~120 years, effectively "no upper bound"
+  pregnancyOnly Boolean  @default(false)
+  trimester     Int? // 1, 2, 3 — only relevant if pregnancyOnly
+  low           Float?
+  high          Float?
+  textRange     String? // for qualitative tests, e.g. "Non-reactive"
+  unit          String?
+  isDefault     Boolean  @default(false) // fallback range if nothing else matches
+  createdAt     DateTime @default(now())
+
+  @@index([testId])
+}
+
+// Panic/critical thresholds are separate from the normal H/L reference range
+// and trigger the critical-value call workflow, not just a flag.
+model CriticalThreshold {
+  id       String  @id @default(cuid())
+  testId   String
+  test     Test    @relation(fields: [testId], references: [id])
+  low      Float?
+  high     Float?
+  gender   Gender?
+  ageMinDays Int   @default(0)
+  ageMaxDays Int   @default(43800)
+
+  @@index([testId])
+}
+
+model Panel {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String // e.g. "Complete Blood Count (CBC)"
+  category    TestCategory
+  price       Decimal? @db.Decimal(10, 2)
+  active      Boolean  @default(true)
+
+  panelTests  PanelTest[]
+  orderPanels OrderPanel[]
+}
+
+model PanelTest {
+  id       String @id @default(cuid())
+  panelId  String
+  panel    Panel  @relation(fields: [panelId], references: [id])
+  testId   String
+  test     Test   @relation(fields: [testId], references: [id])
+  sortOrder Int   @default(0) // fixed report print order, not alphabetical
+
+  @@unique([panelId, testId])
+}
+
+// ---------------------------------------------------------------------------
+// Orders / Accession / Workflow
+// ---------------------------------------------------------------------------
+
+enum OrderPriority {
+  ROUTINE
+  URGENT
+  STAT
+}
+
+enum OrderStatus {
+  ORDER_CREATED
+  SAMPLE_COLLECTED
+  SAMPLE_RECEIVED
+  RESULT_ENTRY
+  TECH_VERIFIED
+  AUTHORIZED
+  RELEASED
+  AMENDED
+  CANCELLED
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  accessionNo     String   @unique // barcode value
+  patientId       String
+  patient         Patient  @relation(fields: [patientId], references: [id])
+  branchId        String
+  branch          Branch   @relation(fields: [branchId], references: [id])
+  referringDoctor String?
+  priority        OrderPriority @default(ROUTINE)
+  status          OrderStatus   @default(ORDER_CREATED)
+
+  collectedAt     DateTime?
+  receivedAt      DateTime?
+  reportedAt      DateTime?
+
+  authorizedById  String?
+  authorizedBy    User?    @relation("AuthorizedBy", fields: [authorizedById], references: [id])
+
+  isAmendment     Boolean  @default(false)
+  amendsOrderId   String?  @unique
+  amendsOrder     Order?   @relation("Amendment", fields: [amendsOrderId], references: [id])
+  amendedBy       Order?   @relation("Amendment")
+  amendReasonCode String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orderTests      OrderTest[]
+  orderPanels     OrderPanel[]
+  results         Result[]
+  auditLogs       AuditLog[]
+  criticalCalls   CriticalValueCall[]
+  deliveries      ReportDelivery[]
+
+  @@index([patientId])
+  @@index([status])
+}
+
+model OrderPanel {
+  id      String @id @default(cuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+  panelId String
+  panel   Panel  @relation(fields: [panelId], references: [id])
+}
+
+model OrderTest {
+  id       String @id @default(cuid())
+  orderId  String
+  order    Order  @relation(fields: [orderId], references: [id])
+  testId   String
+  test     Test   @relation(fields: [testId], references: [id])
+
+  @@unique([orderId, testId])
+}
+
+// ---------------------------------------------------------------------------
+// Results
+// ---------------------------------------------------------------------------
+
+enum ResultFlag {
+  NORMAL
+  LOW
+  HIGH
+  CRITICAL_LOW
+  CRITICAL_HIGH
+  ABNORMAL // qualitative abnormal (e.g. Reactive) without numeric direction
+}
+
+enum ResultStatus {
+  PENDING
+  ENTERED
+  TECH_VERIFIED
+  AUTHORIZED
+  RELEASED
+  AMENDED
+}
+
+model Result {
+  id              String   @id @default(cuid())
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id])
+  testId          String
+  test            Test     @relation(fields: [testId], references: [id])
+
+  numericValue    Float?
+  textValue       String?
+  unit            String?
+
+  referenceRangeText String? // resolved + snapshotted at time of entry/verification
+  flag            ResultFlag @default(NORMAL)
+  deltaFlag       Boolean  @default(false)
+  deltaPrevValue  Float?
+  deltaPctChange  Float?
+
+  isDerived       Boolean  @default(false)
+  status          ResultStatus @default(PENDING)
+
+  instrumentId    String? // set when result came via HL7/ASTM interface, null = manual entry
+  enteredById     String?
+  enteredBy       User?    @relation("EnteredBy", fields: [enteredById], references: [id])
+  enteredAt       DateTime?
+
+  verifiedById    String?
+  verifiedBy      User?    @relation("VerifiedBy", fields: [verifiedById], references: [id])
+  verifiedAt      DateTime?
+
+  interpretiveComment String? // auto-populated, pathologist-editable
+  pathologistNote String?
+
+  // Histopath/Cytology narrative fields — used instead of numericValue/textValue
+  grossDescription String?
+  microscopicDescription String?
+  diagnosis       String?
+
+  // Microbiology culture & sensitivity — structured as JSON:
+  // { organism: string, colonyCount: string, antibiotics: [{ drug, result: "S"|"I"|"R" }] }
+  organismPanel   Json?
+
+  // Molecular
+  ctValue         Float?
+  qualitativeResult String? // Detected / Not Detected
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([testId])
+  @@index([status])
+}
+
+// Critical value call-back log — required whenever a result crosses a
+// CriticalThreshold. Compliance requires who was called, when, and by whom.
+model CriticalValueCall {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  calledById    String
+  calledBy      User     @relation(fields: [calledById], references: [id])
+  notifiedName  String // clinician/nurse notified
+  notifiedRole  String?
+  contactMethod String // phone, in-person, etc.
+  calledAt      DateTime @default(now())
+  confirmationNote String?
+}
+
+// ---------------------------------------------------------------------------
+// Report templates & delivery
+// ---------------------------------------------------------------------------
+
+model ReportTemplate {
+  id          String   @id @default(cuid())
+  branchId    String?
+  branch      Branch?  @relation(fields: [branchId], references: [id])
+  name        String
+  category    TestCategory?
+  layoutJson  Json // section order, header/footer config, language
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+enum DeliveryChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+  PORTAL
+  PRINT
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+  VIEWED
+}
+
+model ReportDelivery {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  channel   DeliveryChannel
+  status    DeliveryStatus @default(QUEUED)
+  target    String // email address / phone number
+  sentAt    DateTime?
+  errorMessage String?
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail — every create/edit/verify/authorize/print/amend action
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  orderId     String?
+  order       Order?   @relation(fields: [orderId], references: [id])
+  action      String // e.g. "RESULT_ENTERED", "ORDER_AUTHORIZED", "REPORT_PRINTED"
+  entityType  String
+  entityId    String?
+  beforeJson  Json?
+  afterJson   Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+  @@index([userId])
+}

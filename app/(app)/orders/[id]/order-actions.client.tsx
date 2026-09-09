@@ -1,0 +1,121 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { OrderStatus } from "@prisma/client";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { markSampleCollectedAndReceived, transitionOrderStatus } from "@/app/actions/orders";
+import { pathologistAuthorize, releaseReport, technologistVerify } from "@/app/actions/results";
+
+export function OrderActions({
+  orderId,
+  status,
+  accessionNo,
+  role,
+}: {
+  orderId: string;
+  status: OrderStatus;
+  accessionNo: string;
+  role: string;
+}) {
+  const router = useRouter();
+  const canTech = role === "TECHNOLOGIST" || role === "ADMIN";
+  const canPath = role === "PATHOLOGIST" || role === "ADMIN";
+
+  function refresh() {
+    router.refresh();
+  }
+
+  if (status === "ORDER_CREATED") {
+    return (
+      <ConfirmDialog
+        title="Mark sample collected and received?"
+        description={`This records collection and lab receipt for accession ${accessionNo} in one step. Use this when the specimen is already on the bench.`}
+        confirmLabel="Mark collected and received"
+        successMessage="Sample collected and received."
+        trigger={<Button type="button">Mark sample collected and received</Button>}
+        onConfirm={async () => {
+          await markSampleCollectedAndReceived(orderId);
+          refresh();
+        }}
+      />
+    );
+  }
+
+  if (status === "SAMPLE_COLLECTED") {
+    return (
+      <ConfirmDialog
+        title="Mark sample received?"
+        description={`Confirm accession ${accessionNo} has arrived in the lab and is ready for result entry.`}
+        confirmLabel="Mark received"
+        successMessage="Sample marked received."
+        trigger={<Button type="button">Mark sample received</Button>}
+        onConfirm={async () => {
+          await transitionOrderStatus(orderId, OrderStatus.SAMPLE_RECEIVED);
+          refresh();
+        }}
+      />
+    );
+  }
+
+  if (status === "RESULT_ENTRY" && canTech) {
+    return (
+      <ConfirmDialog
+        title="Submit for technologist verification?"
+        description="All entered results will be locked for pathologist review. If a critical value is open, log the clinician call-back first."
+        confirmLabel="Submit for verification"
+        successMessage="Results submitted for verification."
+        trigger={<Button type="button">Submit for technologist verification</Button>}
+        onConfirm={async () => {
+          const res = await technologistVerify(orderId);
+          if (!res.ok) return res;
+          refresh();
+          return res;
+        }}
+      />
+    );
+  }
+
+  if (status === "TECH_VERIFIED" && canPath) {
+    return (
+      <ConfirmDialog
+        title="Authorize this report?"
+        description={`You are signing accession ${accessionNo} as pathologist. The report can then be released to clinicians.`}
+        confirmLabel="Authorize"
+        successMessage="Report authorized."
+        trigger={<Button type="button">Authorize as pathologist</Button>}
+        onConfirm={async () => {
+          await pathologistAuthorize(orderId, {});
+          refresh();
+        }}
+      />
+    );
+  }
+
+  if (status === "AUTHORIZED") {
+    return (
+      <ConfirmDialog
+        title="Release this report?"
+        description="The report becomes available to clinicians. Releasing cannot be undone without an amendment."
+        confirmLabel="Release report"
+        variant="destructive"
+        successMessage="Report released."
+        trigger={<Button type="button">Release report</Button>}
+        onConfirm={async () => {
+          await releaseReport(orderId);
+          refresh();
+        }}
+      />
+    );
+  }
+
+  if (status === "SAMPLE_RECEIVED") {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Enter results in the table. Values save when you leave each field. Then submit for verification.
+      </p>
+    );
+  }
+
+  return null;
+}
