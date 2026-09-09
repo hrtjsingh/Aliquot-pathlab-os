@@ -11,6 +11,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InstructionAlert } from "@/components/instruction-alert";
+import { PatientRegisterDialog } from "@/app/(app)/patients/patient-register-dialog";
 import { createOrder } from "@/app/actions/orders";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +20,7 @@ type Test = { id: string; code: string; name: string; category: string; isDerive
 type Patient = { id: string; mrn: string; firstName: string; lastName: string | null };
 
 export function OrderForm({
-  patients,
+  patients: initialPatients,
   panels,
   tests,
   initialPatientId,
@@ -30,6 +31,7 @@ export function OrderForm({
   initialPatientId?: string;
 }) {
   const router = useRouter();
+  const [patients, setPatients] = useState(initialPatients);
   const [patientId, setPatientId] = useState(initialPatientId ?? "");
   const [selectedPanels, setSelectedPanels] = useState<Set<string>>(new Set());
   const [selectedTests, setSelectedTests] = useState<Set<string>>(new Set());
@@ -136,17 +138,25 @@ export function OrderForm({
         ))}
       </div>
 
-      <Card className="h-fit lg:sticky lg:top-6">
+        <Card className="h-fit lg:sticky lg:top-6">
         <CardHeader>
           <CardTitle>Order details</CardTitle>
           <CardDescription>Review the patient, priority, and selected tests, then confirm.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="patient">Patient</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="patient">Patient</Label>
+              <PatientRegisterDialog
+                onRegistered={(patient) => {
+                  setPatients((prev) => [patient, ...prev]);
+                  setPatientId(patient.id);
+                }}
+              />
+            </div>
             <NativeSelect id="patient" value={patientId} onChange={(e) => setPatientId(e.target.value)}>
               <option value="" disabled>
-                Select patient
+                {patients.length === 0 ? "No patients yet — add one above" : "Select patient"}
               </option>
               {patients.map((p) => (
                 <option key={p.id} value={p.id}>

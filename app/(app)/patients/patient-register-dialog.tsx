@@ -19,7 +19,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-export function PatientRegisterDialog() {
+export function PatientRegisterDialog({
+  onRegistered,
+}: {
+  onRegistered?: (patient: { id: string; mrn: string; firstName: string; lastName: string | null }) => void;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -36,23 +40,27 @@ export function PatientRegisterDialog() {
       }
       toast.success("Patient registered. Continue by creating an order.");
       setOpen(false);
-      router.push(`/orders/new?patientId=${result.patientId}`);
+      if (onRegistered) {
+        onRegistered({ id: result.patientId, mrn: result.mrn, firstName: result.firstName, lastName: result.lastName });
+      } else {
+        router.push(`/orders/new?patientId=${result.patientId}`);
+      }
     });
   }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
+        <Button variant={onRegistered ? "outline" : "default"} size={onRegistered ? "sm" : "default"}>
           <UserPlus />
-          Register patient
+          {onRegistered ? "New patient" : "Register patient"}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Register patient</DialogTitle>
+          <DialogTitle>{onRegistered ? "New patient" : "Register patient"}</DialogTitle>
           <DialogDescription>
-            MRN must be unique. After saving, you will be taken to New Order with this patient selected.
+            MRN must be unique. After saving, {onRegistered ? "this patient is selected for the order." : "you will be taken to New Order with this patient selected."}
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="flex flex-col gap-3">
@@ -104,7 +112,7 @@ export function PatientRegisterDialog() {
           {error ? <p className="text-xs text-destructive">{error}</p> : null}
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Register and create order"}
+              {pending ? "Saving…" : onRegistered ? "Register and select" : "Register and create order"}
             </Button>
           </DialogFooter>
         </form>

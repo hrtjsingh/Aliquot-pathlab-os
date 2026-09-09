@@ -55,7 +55,7 @@ export function LoginHero() {
       <div className="relative z-10 flex items-start justify-between">
         <BrandLockup invert compact />
         <span className="rounded-full border border-brand-foreground/20 bg-brand-foreground/10 px-2.5 py-1 text-[11px] font-medium tracking-wide text-brand-foreground/90">
-          Lab report SaaS
+          Lab Report OS
         </span>
       </div>
 

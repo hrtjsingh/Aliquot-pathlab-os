@@ -53,7 +53,7 @@ export async function createPatient(formData: FormData) {
 
   await logAudit({ userId: user.userId, action: "PATIENT_REGISTERED", entityType: "Patient", entityId: patient.id, after: patient });
   revalidatePath("/patients");
-  return { ok: true as const, patientId: patient.id };
+  return { ok: true as const, patientId: patient.id, mrn: patient.mrn, firstName: patient.firstName, lastName: patient.lastName };
 }
 
 export async function searchPatients(query: string) {
