@@ -17,40 +17,16 @@ export function LoginHero() {
         {TRACKS.map((t, i) => (
           <span
             key={i}
-            className="sample-track absolute left-0 h-px -translate-x-full bg-gradient-to-r from-transparent via-brand-foreground/35 to-transparent"
+            className="sample-track absolute left-0 h-px bg-gradient-to-r from-transparent via-brand-foreground/35 to-transparent"
             style={{
               top: `${t.top}%`,
               width: `${t.width}%`,
-              animation: `trackSlide ${t.duration}s linear ${t.delay}s infinite`,
+              animationDuration: `${t.duration}s`,
+              animationDelay: `${t.delay}s`,
             }}
           />
         ))}
       </div>
-
-      <style jsx>{`
-        @keyframes trackSlide {
-          0% {
-            transform: translateX(-100%);
-            opacity: 0;
-          }
-          8% {
-            opacity: 1;
-          }
-          92% {
-            opacity: 1;
-          }
-          100% {
-            transform: translateX(280%);
-            opacity: 0;
-          }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .sample-track {
-            animation: none !important;
-            opacity: 0.2 !important;
-          }
-        }
-      `}</style>
 
       <div className="relative z-10 flex items-start justify-between">
         <BrandLockup invert compact />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { InstructionAlert } from "@/components/instruction-alert";
 import { PatientRegisterDialog } from "@/app/(app)/patients/patient-register-dialog";
+import { useDataSync } from "@/components/data-sync";
 import { createOrder } from "@/app/actions/orders";
+import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { cn } from "@/lib/utils";
 
 type Panel = { id: string; code: string; name: string; category: string };
@@ -31,6 +33,7 @@ export function OrderForm({
   initialPatientId?: string;
 }) {
   const router = useRouter();
+  const { patchSnapshot } = useDataSync();
   const [patients, setPatients] = useState(initialPatients);
   const [patientId, setPatientId] = useState(initialPatientId ?? "");
   const [selectedPanels, setSelectedPanels] = useState<Set<string>>(new Set());
@@ -38,6 +41,13 @@ export function OrderForm({
   const [priority, setPriority] = useState<"ROUTINE" | "URGENT" | "STAT">("ROUTINE");
   const [referringDoctor, setReferringDoctor] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPatients((prev) => {
+      const ids = new Set(initialPatients.map((patient) => patient.id));
+      return [...initialPatients, ...prev.filter((patient) => !ids.has(patient.id))];
+    });
+  }, [initialPatients]);
 
   const orderableTests = tests.filter((t) => !t.isDerived);
   const selectedPatient = patients.find((p) => p.id === patientId);
@@ -61,20 +71,72 @@ export function OrderForm({
     }
 
     setError(null);
-    const result = await createOrder({
+    const payload = {
       patientId,
       referringDoctor,
       priority,
       testIds: Array.from(selectedTests),
       panelIds: Array.from(selectedPanels),
-    });
-    if (!result.ok) {
-      setError(result.error);
-      return result;
+    };
+    const testCount = selectedTests.size + selectedPanels.size;
+    const patientName = selectedPatient
+      ? `${selectedPatient.firstName} ${selectedPatient.lastName ?? ""}`.trim()
+      : "Patient";
+
+    async function rememberOrder(orderId: string, accessionNo: string) {
+      await patchSnapshot((snapshot) => ({
+        ...snapshot,
+        worklist: [
+          {
+            id: orderId,
+            accessionNo,
+            status: "ORDER_CREATED",
+            priority,
+            patient: {
+              firstName: selectedPatient?.firstName ?? "Patient",
+              lastName: selectedPatient?.lastName ?? null,
+              phone: null,
+            },
+            testCount,
+          },
+          ...snapshot.worklist.filter((order) => order.id !== orderId),
+        ],
+        dashboard: {
+          ...snapshot.dashboard,
+          recent: [
+            { id: orderId, accessionNo, status: "ORDER_CREATED", priority, patientName },
+            ...snapshot.dashboard.recent.filter((order) => order.id !== orderId),
+          ].slice(0, 8),
+        },
+      }));
     }
-    toast.success(`Order created. Accession ${result.accessionNo}.`);
-    router.push(`/orders/${result.orderId}`);
-    return result;
+
+    if (isBrowserOffline()) {
+      await enqueueOp({ type: "createOrder", params: payload });
+      toast.success("Order queued. Tap Sync when you’re back online to assign an accession.");
+      return { ok: true as const, orderId: "", accessionNo: "queued" };
+    }
+
+    try {
+      const result = await createOrder(payload);
+      if (!result.ok) {
+        setError(result.error);
+        return result;
+      }
+      toast.success(`Order created. Accession ${result.accessionNo}.`);
+      await rememberOrder(result.orderId, result.accessionNo);
+      router.push(`/orders/${result.orderId}`);
+      return result;
+    } catch (error) {
+      if (isNetworkError(error)) {
+        await enqueueOp({ type: "createOrder", params: payload });
+        toast.success("Order queued. Tap Sync when you’re back online to assign an accession.");
+        return { ok: true as const, orderId: "", accessionNo: "queued" };
+      }
+      const message = error instanceof Error ? error.message : "Could not create this order.";
+      setError(message);
+      return { ok: false as const, error: message };
+    }
   }
 
   const categories = Array.from(new Set(orderableTests.map((t) => t.category)));

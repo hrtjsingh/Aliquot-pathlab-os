@@ -181,8 +181,10 @@ export function formatAgeBand(ageMinDays: number, ageMaxDays: number) {
 }
 
 export function formatNumericRange(low: number | null, high: number | null) {
-  if (low != null && high != null) return `${low} – ${high}`;
-  if (low != null) return `≥ ${low}`;
-  if (high != null) return `≤ ${high}`;
+  const lo = low == null || Number.isNaN(Number(low)) ? null : Number(low);
+  const hi = high == null || Number.isNaN(Number(high)) ? null : Number(high);
+  if (lo != null && hi != null) return `${lo} – ${hi}`;
+  if (lo != null) return `≥ ${lo}`;
+  if (hi != null) return `≤ ${hi}`;
   return "—";
 }

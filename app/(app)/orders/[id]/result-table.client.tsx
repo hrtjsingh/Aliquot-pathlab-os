@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { saveManualResult } from "@/app/actions/results";
+import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { TestProfileDialog } from "@/app/(app)/admin/tests/test-profile-dialog";
 import type { TestProfile } from "@/lib/test-profile";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ const FLAG_BADGE: Record<string, { variant: "destructive" | "warning" | "outline
   ABNORMAL: { variant: "warning", label: "Abnormal" },
 };
 
-export function ResultTable({ orderId, rows, editable }: { orderId: string; rows: ResultRow[]; editable: boolean }) {
+export function   ResultTable({ orderId, rows, editable }: { orderId: string; rows: ResultRow[]; editable: boolean }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(rows.map((r) => [r.testId, r.numericValue != null ? String(r.numericValue) : (r.textValue ?? "")]))
@@ -53,17 +54,28 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
 
     setPendingId(row.testId);
     startTransition(async () => {
+      const isNumeric = row.dataType === "NUMERIC";
+      const params = {
+        orderId,
+        testId: row.testId,
+        numericValue: isNumeric ? (raw.trim() === "" ? null : Number(raw)) : null,
+        textValue: !isNumeric ? raw : null,
+      };
       try {
-        const isNumeric = row.dataType === "NUMERIC";
-        await saveManualResult({
-          orderId,
-          testId: row.testId,
-          numericValue: isNumeric ? (raw.trim() === "" ? null : Number(raw)) : null,
-          textValue: !isNumeric ? raw : null,
-        });
+        if (isBrowserOffline()) {
+          await enqueueOp({ type: "saveManualResult", params });
+          toast.success(`${row.name} queued. Will sync when you’re back online.`);
+          return;
+        }
+        await saveManualResult(params);
         toast.success(`${row.name} saved.`);
         router.refresh();
       } catch (error) {
+        if (isNetworkError(error)) {
+          await enqueueOp({ type: "saveManualResult", params });
+          toast.success(`${row.name} queued. Will sync when you’re back online.`);
+          return;
+        }
         toast.error(error instanceof Error ? error.message : `Could not save ${row.name}.`);
       } finally {
         setPendingId(null);
@@ -91,16 +103,16 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
                 <div className="flex items-center gap-1">
                   <span>
                     {row.name}
-                    {row.isDerived ? <span className="ml-1.5 text-xs text-muted-foreground">(calc.)</span> : null}
+                    {/* {row.isDerived ? <span className="ml-1.5 text-xs text-muted-foreground">(calc.)</span> : null} */}
                   </span>
-                  <TestProfileDialog
+                  {/* <TestProfileDialog
                     test={row.profile}
                     trigger={
                       <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={`${row.name} profile`}>
                         <BookOpen />
                       </Button>
                     }
-                  />
+                  /> */}
                 </div>
               </TableCell>
               <TableCell className="w-40">

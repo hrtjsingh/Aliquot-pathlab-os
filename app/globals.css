@@ -141,8 +141,52 @@
   }
 }
 
+@keyframes route-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+@keyframes track-slide {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(280%);
+    opacity: 0;
+  }
+}
+
+@utility animate-route-bar {
+  animation: route-bar 1s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+
+.sample-track {
+  animation-name: track-slide;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+  .animate-route-bar {
+    animation: none;
+    width: 100%;
+  }
+  .sample-track {
+    animation: none;
+    opacity: 0.2;
   }
 }

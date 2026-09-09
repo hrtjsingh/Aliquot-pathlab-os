@@ -1,19 +1,20 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { requireRole, requireUser } from "@/lib/rbac";
+import { assertWritableLab, requireRole, requireTenant } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { Prisma, Role } from "@prisma/client";
 import { DEFAULT_REPORT_LAYOUT, parseReportLayout, type ReportLayout } from "@/lib/report-layout";
 
-export async function getOrCreateDefaultTemplate(branchId: string) {
+export async function getOrCreateDefaultTemplate(branchId: string, vendorId: string) {
   const existing = await prisma.reportTemplate.findFirst({
-    where: { branchId, isDefault: true },
+    where: { branchId, isDefault: true, vendorId },
   });
   if (existing) return existing;
   return prisma.reportTemplate.create({
     data: {
+      vendorId,
       branchId,
       name: "Default laboratory report",
       isDefault: true,
@@ -23,13 +24,13 @@ export async function getOrCreateDefaultTemplate(branchId: string) {
 }
 
 export async function getLabConfig() {
-  const user = await requireUser();
+  const user = await requireTenant();
   const branch = user.branchId
-    ? await prisma.branch.findUnique({ where: { id: user.branchId } })
-    : await prisma.branch.findFirst({ orderBy: { createdAt: "asc" } });
+    ? await prisma.branch.findFirst({ where: { id: user.branchId, vendorId: user.vendorId } })
+    : await prisma.branch.findFirst({ where: { vendorId: user.vendorId }, orderBy: { createdAt: "asc" } });
   if (!branch) throw new Error("No laboratory branch is configured.");
 
-  const template = await getOrCreateDefaultTemplate(branch.id);
+  const template = await getOrCreateDefaultTemplate(branch.id, user.vendorId);
   return {
     canEdit: user.role === Role.ADMIN,
     branch: {
@@ -55,11 +56,15 @@ export async function saveLabConfig(input: {
   letterheadUrl: string;
   layout: ReportLayout;
 }) {
-  const { userId } = await requireRole(Role.ADMIN);
+  const { userId, vendorId } = await requireRole(Role.ADMIN);
+  await assertWritableLab(vendorId);
   const name = input.name.trim();
   if (!name) return { ok: false as const, error: "Laboratory name is required." };
 
   const layout = parseReportLayout(input.layout);
+
+  const owned = await prisma.branch.findFirst({ where: { id: input.branchId, vendorId } });
+  if (!owned) return { ok: false as const, error: "Branch was not found in this lab." };
 
   const branch = await prisma.branch.update({
     where: { id: input.branchId },
@@ -72,13 +77,14 @@ export async function saveLabConfig(input: {
     },
   });
 
-  const template = await getOrCreateDefaultTemplate(branch.id);
+  const template = await getOrCreateDefaultTemplate(branch.id, vendorId);
   await prisma.reportTemplate.update({
     where: { id: template.id },
     data: { layoutJson: layout as unknown as Prisma.InputJsonValue },
   });
 
   await logAudit({
+    vendorId,
     userId,
     action: "LAB_CONFIG_UPDATED",
     entityType: "Branch",
@@ -90,9 +96,9 @@ export async function saveLabConfig(input: {
   return { ok: true as const };
 }
 
-export async function getReportLayoutForBranch(branchId: string): Promise<ReportLayout> {
+export async function getReportLayoutForBranch(branchId: string, vendorId: string): Promise<ReportLayout> {
   const template = await prisma.reportTemplate.findFirst({
-    where: { branchId, isDefault: true },
+    where: { branchId, vendorId, isDefault: true },
   });
   return parseReportLayout(template?.layoutJson);
 }

@@ -14,6 +14,140 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// One independent lab company. Branches, users, patients, and catalogs never cross vendors.
+model Vendor {
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
+  logoUrl        String?
+  primaryColor   String?
+  letterheadUrl  String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  users          User[]
+  branches       Branch[]
+  patients       Patient[]
+  tests          Test[]
+  panels         Panel[]
+  orders         Order[]
+  reportTemplates ReportTemplate[]
+  auditLogs      AuditLog[]
+  syncState      SyncState?
+  tombstones     Tombstone[]
+  subscription   Subscription?
+  licenseCache   LicenseCache?
+}
+
+model SyncState {
+  id           String    @id @default(cuid())
+  vendorId     String    @unique
+  vendor       Vendor    @relation(fields: [vendorId], references: [id])
+  lastPushedAt DateTime?
+  lastPulledAt DateTime?
+  lastError    String?
+  updatedAt    DateTime  @updatedAt
+}
+
+model Tombstone {
+  id         String   @id @default(cuid())
+  vendorId   String
+  vendor     Vendor   @relation(fields: [vendorId], references: [id])
+  entityType String
+  entityId   String
+  deletedAt  DateTime @default(now())
+
+  @@unique([vendorId, entityType, entityId])
+  @@index([vendorId, deletedAt])
+}
+
+// ---------------------------------------------------------------------------
+// HQ billing — Neon (CLOUD_DATABASE_URL) is the master. Local Subscription
+// rows are not authority. Labs only cache a signed lease (LicenseCache);
+// expiry and status come from the Ed25519 payload, so editing local SQL
+// cannot extend access.
+// ---------------------------------------------------------------------------
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+model SuperAdmin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Plan {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  seats          Int      @default(1)
+  intervalMonths Int      @default(12)
+  intervalDays   Int      @default(0)
+  priceInr       Decimal? @db.Decimal(12, 2)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscriptions  Subscription[]
+}
+
+model Subscription {
+  id           String             @id @default(cuid())
+  vendorId     String             @unique
+  vendor       Vendor             @relation(fields: [vendorId], references: [id])
+  planId       String
+  plan         Plan               @relation(fields: [planId], references: [id])
+  status       SubscriptionStatus @default(TRIAL)
+  seats        Int                @default(5)
+  startsAt     DateTime           @default(now())
+  expiresAt    DateTime
+  signedLease  String             @db.Text
+  notes        String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  billingEvents BillingEvent[]
+
+  @@index([status, expiresAt])
+}
+
+model BillingEvent {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  kind           String
+  amountInr      Decimal?     @db.Decimal(12, 2)
+  note           String?
+  actorEmail     String?
+  createdAt      DateTime     @default(now())
+
+  @@index([subscriptionId, createdAt])
+}
+
+/// Local cache of the HQ-signed lease only. Never treat unsigned columns as truth.
+model LicenseCache {
+  id          String   @id @default(cuid())
+  vendorId    String   @unique
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+  signedLease String   @db.Text
+  expiresAt   DateTime
+  source      String   @default("cloud")
+  verifiedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 // ---------------------------------------------------------------------------
 // Identity / RBAC
 // ---------------------------------------------------------------------------
@@ -29,8 +163,10 @@ enum Role {
 
 model User {
   id            String   @id @default(cuid())
+  vendorId      String
+  vendor        Vendor   @relation(fields: [vendorId], references: [id])
   name          String
-  email         String   @unique
+  email         String
   passwordHash  String
   role          Role
   branchId      String?
@@ -46,21 +182,30 @@ model User {
   ordersAuthorized Order[]         @relation("AuthorizedBy")
   auditLogs        AuditLog[]
   criticalCalls    CriticalValueCall[]
+
+  @@unique([vendorId, email])
+  @@index([vendorId])
 }
 
 model Branch {
   id           String   @id @default(cuid())
+  vendorId     String
+  vendor       Vendor   @relation(fields: [vendorId], references: [id])
   name         String
-  code         String   @unique
+  code         String
   address      String?
   letterheadUrl String?
   nablNo       String?
   isoNo        String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   users        User[]
   orders       Order[]
   reportTemplates ReportTemplate[]
+
+  @@unique([vendorId, code])
+  @@index([vendorId])
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +220,9 @@ enum Gender {
 
 model Patient {
   id            String   @id @default(cuid())
-  mrn           String   @unique // medical record number
+  vendorId      String
+  vendor        Vendor   @relation(fields: [vendorId], references: [id])
+  mrn           String
   firstName     String
   lastName      String?
   dob           DateTime?
@@ -91,6 +238,9 @@ model Patient {
   updatedAt     DateTime @updatedAt
 
   orders        Order[]
+
+  @@unique([vendorId, mrn])
+  @@index([vendorId])
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +271,9 @@ enum ResultDataType {
 
 model Test {
   id              String   @id @default(cuid())
-  code            String   @unique
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  code            String
   name            String
   shortName       String?
   category        TestCategory
@@ -149,6 +301,9 @@ model Test {
   orderTests      OrderTest[]
   results         Result[]
   criticalThresholds CriticalThreshold[]
+
+  @@unique([vendorId, code])
+  @@index([vendorId])
 }
 
 // Reference ranges resolve by test + age band + gender + (optional) condition.
@@ -190,14 +345,21 @@ model CriticalThreshold {
 
 model Panel {
   id          String   @id @default(cuid())
-  code        String   @unique
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+  code        String
   name        String // e.g. "Complete Blood Count (CBC)"
   category    TestCategory
   price       Decimal? @db.Decimal(10, 2)
   active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   panelTests  PanelTest[]
   orderPanels OrderPanel[]
+
+  @@unique([vendorId, code])
+  @@index([vendorId])
 }
 
 model PanelTest {
@@ -229,13 +391,16 @@ enum OrderStatus {
   TECH_VERIFIED
   AUTHORIZED
   RELEASED
+  SENT_TO_CUSTOMER
   AMENDED
   CANCELLED
 }
 
 model Order {
   id              String   @id @default(cuid())
-  accessionNo     String   @unique // barcode value
+  vendorId        String
+  vendor          Vendor   @relation(fields: [vendorId], references: [id])
+  accessionNo     String
   patientId       String
   patient         Patient  @relation(fields: [patientId], references: [id])
   branchId        String
@@ -257,6 +422,9 @@ model Order {
   amendedBy       Order?   @relation("Amendment")
   amendReasonCode String?
 
+  // Unguessable token for the public QR view/download page (/r/{token}).
+  publicToken     String?  @unique
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -267,8 +435,10 @@ model Order {
   criticalCalls   CriticalValueCall[]
   deliveries      ReportDelivery[]
 
+  @@unique([vendorId, accessionNo])
   @@index([patientId])
   @@index([status])
+  @@index([vendorId, status])
 }
 
 model OrderPanel {
@@ -385,6 +555,8 @@ model CriticalValueCall {
 
 model ReportTemplate {
   id          String   @id @default(cuid())
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
   branchId    String?
   branch      Branch?  @relation(fields: [branchId], references: [id])
   name        String
@@ -392,6 +564,9 @@ model ReportTemplate {
   layoutJson  Json // section order, header/footer config, language
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([vendorId])
 }
 
 enum DeliveryChannel {
@@ -427,6 +602,8 @@ model ReportDelivery {
 
 model AuditLog {
   id          String   @id @default(cuid())
+  vendorId    String?
+  vendor      Vendor?  @relation(fields: [vendorId], references: [id])
   userId      String?
   user        User?    @relation(fields: [userId], references: [id])
   orderId     String?
@@ -441,4 +618,5 @@ model AuditLog {
 
   @@index([orderId])
   @@index([userId])
+  @@index([vendorId])
 }

@@ -6,19 +6,25 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { markSampleCollectedAndReceived, transitionOrderStatus } from "@/app/actions/orders";
 import { pathologistAuthorize, releaseReport, technologistVerify } from "@/app/actions/results";
+import { HandoverActions } from "./handover-actions.client";
+import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
+import { useDataSync } from "@/components/data-sync";
 
 export function OrderActions({
   orderId,
   status,
   accessionNo,
   role,
+  phone,
 }: {
   orderId: string;
   status: OrderStatus;
   accessionNo: string;
   role: string;
+  phone?: string | null;
 }) {
   const router = useRouter();
+  const { patchSnapshot } = useDataSync();
   const canTech = role === "TECHNOLOGIST" || role === "ADMIN";
   const canPath = role === "PATHOLOGIST" || role === "ADMIN";
 
@@ -35,8 +41,20 @@ export function OrderActions({
         successMessage="Sample collected and received."
         trigger={<Button type="button">Mark sample collected and received</Button>}
         onConfirm={async () => {
-          await markSampleCollectedAndReceived(orderId);
-          refresh();
+          if (isBrowserOffline()) {
+            await enqueueOp({ type: "markSampleCollectedAndReceived", orderId });
+            return { queued: true as const };
+          }
+          try {
+            await markSampleCollectedAndReceived(orderId);
+            refresh();
+          } catch (error) {
+            if (isNetworkError(error)) {
+              await enqueueOp({ type: "markSampleCollectedAndReceived", orderId });
+              return { queued: true as const };
+            }
+            throw error;
+          }
         }}
       />
     );
@@ -51,8 +69,20 @@ export function OrderActions({
         successMessage="Sample marked received."
         trigger={<Button type="button">Mark sample received</Button>}
         onConfirm={async () => {
-          await transitionOrderStatus(orderId, OrderStatus.SAMPLE_RECEIVED);
-          refresh();
+          if (isBrowserOffline()) {
+            await enqueueOp({ type: "transitionOrderStatus", orderId, to: OrderStatus.SAMPLE_RECEIVED });
+            return { queued: true as const };
+          }
+          try {
+            await transitionOrderStatus(orderId, OrderStatus.SAMPLE_RECEIVED);
+            refresh();
+          } catch (error) {
+            if (isNetworkError(error)) {
+              await enqueueOp({ type: "transitionOrderStatus", orderId, to: OrderStatus.SAMPLE_RECEIVED });
+              return { queued: true as const };
+            }
+            throw error;
+          }
         }}
       />
     );
@@ -67,10 +97,22 @@ export function OrderActions({
         successMessage="Results submitted for verification."
         trigger={<Button type="button">Submit for technologist verification</Button>}
         onConfirm={async () => {
-          const res = await technologistVerify(orderId);
-          if (!res.ok) return res;
-          refresh();
-          return res;
+          if (isBrowserOffline()) {
+            await enqueueOp({ type: "technologistVerify", orderId });
+            return { queued: true as const };
+          }
+          try {
+            const res = await technologistVerify(orderId);
+            if (!res.ok) return res;
+            refresh();
+            return res;
+          } catch (error) {
+            if (isNetworkError(error)) {
+              await enqueueOp({ type: "technologistVerify", orderId });
+              return { queued: true as const };
+            }
+            throw error;
+          }
         }}
       />
     );
@@ -85,8 +127,20 @@ export function OrderActions({
         successMessage="Report authorized."
         trigger={<Button type="button">Authorize as pathologist</Button>}
         onConfirm={async () => {
-          await pathologistAuthorize(orderId, {});
-          refresh();
+          if (isBrowserOffline()) {
+            await enqueueOp({ type: "pathologistAuthorize", orderId });
+            return { queued: true as const };
+          }
+          try {
+            await pathologistAuthorize(orderId, {});
+            refresh();
+          } catch (error) {
+            if (isNetworkError(error)) {
+              await enqueueOp({ type: "pathologistAuthorize", orderId });
+              return { queued: true as const };
+            }
+            throw error;
+          }
         }}
       />
     );
@@ -102,7 +156,43 @@ export function OrderActions({
         successMessage="Report released."
         trigger={<Button type="button">Release report</Button>}
         onConfirm={async () => {
-          await releaseReport(orderId);
+          if (isBrowserOffline()) {
+            await enqueueOp({ type: "releaseReport", orderId });
+            return { queued: true as const };
+          }
+          try {
+            await releaseReport(orderId);
+            refresh();
+          } catch (error) {
+            if (isNetworkError(error)) {
+              await enqueueOp({ type: "releaseReport", orderId });
+              return { queued: true as const };
+            }
+            throw error;
+          }
+        }}
+      />
+    );
+  }
+
+  if (status === "RELEASED") {
+    return (
+      <HandoverActions
+        orderId={orderId}
+        accessionNo={accessionNo}
+        phone={phone ?? null}
+        onDone={async () => {
+          await patchSnapshot((snapshot) => ({
+            ...snapshot,
+            worklist: snapshot.worklist.filter((order) => order.id !== orderId),
+            dashboard: {
+              ...snapshot.dashboard,
+              awaitingHandover: Math.max(0, (snapshot.dashboard.awaitingHandover ?? 0) - 1),
+              recent: snapshot.dashboard.recent.map((order) =>
+                order.id === orderId ? { ...order, status: "SENT_TO_CUSTOMER" } : order
+              ),
+            },
+          }));
           refresh();
         }}
       />

@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --paper: #f4f6f7;
+  --ink: #1c3f52;
+  --teal: #0f766e;
+  --rule: #d7dddf;
+  --wax: #b3261e;
+  --gold: #a15c00;
+  --muted: #3d4f59;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(rgba(28, 63, 82, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(28, 63, 82, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+h1,
+h2,
+.display {
+  font-family: "Fraunces", Georgia, serif;
+  text-wrap: balance;
+}
+
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+dialog.hq-modal {
+  width: min(40rem, calc(100vw - 1.5rem));
+  max-height: calc(100dvh - 1.5rem);
+  margin: auto;
+  padding: 0;
+  border: 1px solid rgb(28 63 82 / 0.18);
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 8px 8px 0 #1c3f52;
+}
+dialog.hq-modal.wide {
+  width: min(48rem, calc(100vw - 1.5rem));
+}
+dialog.hq-modal::backdrop {
+  background: rgb(28 63 82 / 0.48);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

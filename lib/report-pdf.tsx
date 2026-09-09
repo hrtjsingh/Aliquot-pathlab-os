@@ -35,6 +35,7 @@ export type ReportData = {
   pathologistName: string | null;
   pathologistRegNo: string | null;
   isAmended: boolean;
+  qrCodeDataUrl?: string | null;
 };
 
 function createStyles(layout: ReportLayout) {
@@ -43,9 +44,9 @@ function createStyles(layout: ReportLayout) {
   return StyleSheet.create({
     page: { padding: compact ? 24 : 32, fontSize: compact ? 8 : 9, fontFamily: "Helvetica", color: "#14181c" },
     headerRow: {
-      flexDirection: layout.headerStyle === "centered" ? "column" : "row",
-      justifyContent: layout.headerStyle === "centered" ? "center" : "space-between",
-      alignItems: layout.headerStyle === "centered" ? "center" : "flex-start",
+      flexDirection: layout.headerStyle === "centered" && !layout.showQrCode ? "column" : "row",
+      justifyContent: layout.headerStyle === "centered" && !layout.showQrCode ? "center" : "space-between",
+      alignItems: layout.headerStyle === "centered" && !layout.showQrCode ? "center" : "flex-start",
       borderBottom: 2,
       borderColor: color,
       paddingBottom: 8,
@@ -74,6 +75,10 @@ function createStyles(layout: ReportLayout) {
     comment: { marginTop: 6, fontSize: 8.5, fontStyle: "italic", color },
     footer: { position: "absolute", bottom: 24, left: 32, right: 32, borderTop: 1, borderColor: "#dfe3e4", paddingTop: 8, fontSize: 7.5, color: "#5b6670" },
     signatureBlock: { marginTop: 24, flexDirection: "row", justifyContent: "flex-end" },
+    qrBlock: { alignItems: "center", width: 72 },
+    qrImage: { width: 64, height: 64 },
+    qrCaption: { fontSize: 6.5, color: "#5b6670", marginTop: 3, textAlign: "center" },
+    qrId: { fontSize: 7, fontWeight: 700, color, marginTop: 1, textAlign: "center" },
     amendedBanner: { backgroundColor: "#b3261e", color: "white", padding: 4, textAlign: "center", fontSize: 9, fontWeight: 700, marginBottom: 8 },
   });
 }
@@ -114,13 +119,15 @@ export function LabReportDocument({
   const unitWidth = layout.showFlags && layout.showReferenceRange ? "16%" : "18%";
   const paramWidth = !layout.showFlags && !layout.showReferenceRange ? "52%" : layout.showFlags && layout.showReferenceRange ? "34%" : "42%";
 
+  const showQr = Boolean(layout.showQrCode && data.qrCodeDataUrl);
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
         {data.isAmended && <Text style={styles.amendedBanner}>AMENDED REPORT — supersedes previously released report for this accession</Text>}
 
         <View style={styles.headerRow}>
-          <View style={{ alignItems: layout.headerStyle === "centered" ? "center" : "flex-start" }}>
+          <View style={{ alignItems: layout.headerStyle === "centered" ? "center" : "flex-start", flexGrow: 1 }}>
             {showLogo ? <Image src={letterhead as string} style={styles.logo} /> : null}
             <Text style={styles.labName}>{data.branch.name}</Text>
             <Text style={styles.reportTitle}>{layout.reportTitle}</Text>
@@ -146,6 +153,13 @@ export function LabReportDocument({
               <Text style={styles.accessionMeta}>Reported: {data.reportedAt ?? "—"}</Text>
             )}
           </View>
+          {showQr ? (
+            <View style={styles.qrBlock}>
+              <Image src={data.qrCodeDataUrl as string} style={styles.qrImage} />
+              <Text style={styles.qrCaption}>Scan to view / download</Text>
+              <Text style={styles.qrId}>{data.accessionNo}</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.patientBlock}>

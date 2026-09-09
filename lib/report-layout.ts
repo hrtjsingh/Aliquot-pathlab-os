@@ -18,6 +18,7 @@ export type ReportLayout = {
   showReferenceRange: boolean;
   showSignature: boolean;
   showFooter: boolean;
+  showQrCode: boolean;
 };
 
 export const DEFAULT_REPORT_LAYOUT: ReportLayout = {
@@ -39,6 +40,7 @@ export const DEFAULT_REPORT_LAYOUT: ReportLayout = {
   showReferenceRange: true,
   showSignature: true,
   showFooter: true,
+  showQrCode: true,
 };
 
 export function parseReportLayout(value: unknown): ReportLayout {
@@ -71,6 +73,7 @@ export function parseReportLayout(value: unknown): ReportLayout {
     showReferenceRange: raw.showReferenceRange !== false,
     showSignature: raw.showSignature !== false,
     showFooter: raw.showFooter !== false,
+    showQrCode: raw.showQrCode !== false,
   };
 }
 

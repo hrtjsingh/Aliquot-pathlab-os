@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
+import { requireTenant } from "@/lib/rbac";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -55,9 +55,19 @@ function toProfile(t: {
 }
 
 export default async function TestMasterPage() {
-  const session = await auth();
-  const canEdit = (session?.user as { role?: string })?.role === "ADMIN";
+  const user = await requireTenant();
+  const role = user.role;
+
+  if (role !== "ADMIN") {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
+        <PageHeader title="Test master" description="Only administrators can manage the laboratory test catalog." />
+      </div>
+    );
+  }
+
   const tests = await prisma.test.findMany({
+    where: { vendorId: user.vendorId },
     orderBy: [{ category: "asc" }, { name: "asc" }],
     include: {
       referenceRanges: { orderBy: [{ gender: "asc" }, { ageMinDays: "asc" }] },
@@ -71,10 +81,10 @@ export default async function TestMasterPage() {
       <PageHeader
         title="Test master"
         description="Each test has a laboratory profile: specimen, method, reference ranges, and panic values."
-        actions={canEdit ? <AddTestDialog /> : null}
+        actions={<AddTestDialog />}
         hint={
           <InstructionAlert title="Test profiles">
-            Open Profile on a row to see how the test is collected, which panels include it, and which ranges apply. Admins can edit the profile without changing historical results.
+            Open Profile on a row to see how the test is collected, which panels include it, and which ranges apply. Edits change the catalog, not historical results.
           </InstructionAlert>
         }
       />
@@ -86,7 +96,7 @@ export default async function TestMasterPage() {
               icon={<FlaskConical className="size-5" />}
               title="No tests in the catalog"
               description="Add the first orderable test to start building panels and accessions."
-              action={canEdit ? <AddTestDialog /> : null}
+              action={<AddTestDialog />}
             />
           ) : (
             <Table>
@@ -123,8 +133,8 @@ export default async function TestMasterPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-2">
-                          <TestProfileDialog test={profile} canEdit={canEdit} />
-                          {canEdit ? <ToggleTestButton testId={t.id} active={t.active} name={t.name} /> : null}
+                          <TestProfileDialog test={profile} canEdit />
+                          <ToggleTestButton testId={t.id} active={t.active} name={t.name} />
                         </div>
                       </TableCell>
                     </TableRow>

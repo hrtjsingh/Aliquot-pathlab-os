@@ -1,19 +1,29 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/rbac";
+import { assertWritableLab, requireRole, requireTenant, requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { resolveReferenceRange, formatRangeText, ageInDays } from "@/lib/reference-range";
 import { computeFlag, computeDelta, isAutoVerifyEligible, requiresCriticalCallback } from "@/lib/flagging";
 import { runCalcRule } from "@/lib/calc-engine";
 import { generateInterpretiveComments } from "@/lib/interpretive-comments";
-import { OrderStatus, ResultStatus } from "@prisma/client";
+import { OrderStatus, ResultStatus, Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { newPublicReportToken } from "@/lib/public-report";
 
 const DELTA_CONFIG = { pctThreshold: 30 }; // lab-configurable; flat 30% default per common LIS practice
 
-async function patientRangeCtx(orderId: string) {
-  const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId }, include: { patient: true } });
+function effectiveAgeYears(ageYears: number | null, ageDays: number) {
+  if (ageYears != null && ageYears > 0) return ageYears;
+  return Math.max(1, Math.floor(ageDays / 365.25));
+}
+
+async function patientRangeCtx(orderId: string, vendorId: string) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, vendorId },
+    include: { patient: true },
+  });
+  if (!order) throw new Error("Order was not found in this lab.");
   const days = ageInDays(order.patient.dob, order.patient.ageYears, order.patient.ageMonths);
   return {
     order,
@@ -26,7 +36,7 @@ async function patientRangeCtx(orderId: string) {
     },
     calcCtx: {
       gender: order.patient.gender,
-      ageYears: order.patient.ageYears ?? Math.floor(days / 365.25),
+      ageYears: effectiveAgeYears(order.patient.ageYears, days),
     },
   };
 }
@@ -44,9 +54,13 @@ export async function saveManualResult(params: {
   qualitativeResult?: string;
   ctValue?: number;
 }) {
-  const user = await requireUser();
-  const test = await prisma.test.findUniqueOrThrow({ where: { id: params.testId }, include: { referenceRanges: true, criticalThresholds: true } });
-  const { order, rangeCtx } = await patientRangeCtx(params.orderId);
+  const user = await requireWritableLab();
+  const test = await prisma.test.findFirst({
+    where: { id: params.testId, vendorId: user.vendorId },
+    include: { referenceRanges: true, criticalThresholds: true },
+  });
+  if (!test) throw new Error("Test was not found in this lab.");
+  const { order, rangeCtx } = await patientRangeCtx(params.orderId, user.vendorId);
 
   const range = resolveReferenceRange(test.referenceRanges, rangeCtx);
   const critical = test.criticalThresholds.find(
@@ -100,13 +114,13 @@ export async function saveManualResult(params: {
     ? await prisma.result.update({ where: { id: existing.id }, data })
     : await prisma.result.create({ data });
 
-  await logAudit({ userId: user.userId, orderId: params.orderId, action: "RESULT_ENTERED", entityType: "Result", entityId: result.id, after: result });
+  await logAudit({ vendorId: user.vendorId, userId: user.userId, orderId: params.orderId, action: "RESULT_ENTERED", entityType: "Result", entityId: result.id, after: result });
 
   if (order.status === OrderStatus.SAMPLE_RECEIVED) {
     await prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.RESULT_ENTRY } });
   }
 
-  await cascadeDerivedResults(params.orderId);
+  await cascadeDerivedResults(params.orderId, user.vendorId);
   revalidatePath(`/orders/${params.orderId}`);
   return result;
 }
@@ -116,8 +130,10 @@ export async function saveManualResult(params: {
  * present. Runs after every manual entry — cheap at typical panel sizes and
  * guarantees derived values never go stale relative to their inputs.
  */
-export async function cascadeDerivedResults(orderId: string) {
-  const { order, rangeCtx, calcCtx } = await patientRangeCtx(orderId);
+export async function cascadeDerivedResults(orderId: string, vendorId: string) {
+  const orderRow = await prisma.order.findFirst({ where: { id: orderId, vendorId } });
+  if (!orderRow) throw new Error("Order was not found in this lab.");
+  const { order, rangeCtx, calcCtx } = await patientRangeCtx(orderId, orderRow.vendorId);
   const orderTests = await prisma.orderTest.findMany({
     where: { orderId },
     include: { test: { include: { referenceRanges: true, criticalThresholds: true } } },
@@ -168,8 +184,9 @@ export async function cascadeDerivedResults(orderId: string) {
 }
 
 export async function technologistVerify(orderId: string) {
-  const user = await requireUser();
+  const user = await requireWritableLab();
   if (!["TECHNOLOGIST", "ADMIN"].includes(user.role)) throw new Error("Only a technologist can verify results.");
+  await prisma.order.findFirstOrThrow({ where: { id: orderId, vendorId: user.vendorId } });
 
   const results = await prisma.result.findMany({ where: { orderId } });
   const anyCritical = results.some((r) => requiresCriticalCallback(r.flag));
@@ -185,14 +202,15 @@ export async function technologistVerify(orderId: string) {
     data: { status: "TECH_VERIFIED", verifiedById: user.userId, verifiedAt: new Date() },
   });
   await prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.TECH_VERIFIED } });
-  await logAudit({ userId: user.userId, orderId, action: "TECH_VERIFIED", entityType: "Order", entityId: orderId });
+  await logAudit({ vendorId: user.vendorId, userId: user.userId, orderId, action: "TECH_VERIFIED", entityType: "Order", entityId: orderId });
   revalidatePath(`/orders/${orderId}`);
   return { ok: true as const };
 }
 
 export async function pathologistAuthorize(orderId: string, pathologistNotesByResultId: Record<string, string>) {
-  const user = await requireUser();
+  const user = await requireWritableLab();
   if (!["PATHOLOGIST", "ADMIN"].includes(user.role)) throw new Error("Only a pathologist can authorize a report.");
+  await prisma.order.findFirstOrThrow({ where: { id: orderId, vendorId: user.vendorId } });
 
   for (const [resultId, note] of Object.entries(pathologistNotesByResultId)) {
     if (note) await prisma.result.update({ where: { id: resultId }, data: { pathologistNote: note } });
@@ -200,17 +218,61 @@ export async function pathologistAuthorize(orderId: string, pathologistNotesByRe
 
   await prisma.result.updateMany({ where: { orderId }, data: { status: "AUTHORIZED" } });
   await prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.AUTHORIZED, authorizedById: user.userId } });
-  await logAudit({ userId: user.userId, orderId, action: "AUTHORIZED", entityType: "Order", entityId: orderId });
+  await logAudit({ vendorId: user.vendorId, userId: user.userId, orderId, action: "AUTHORIZED", entityType: "Order", entityId: orderId });
   revalidatePath(`/orders/${orderId}`);
   return { ok: true as const };
 }
 
 export async function releaseReport(orderId: string) {
-  const user = await requireUser();
+  const user = await requireWritableLab();
+  const order = await prisma.order.findFirstOrThrow({ where: { id: orderId, vendorId: user.vendorId } });
   await prisma.result.updateMany({ where: { orderId }, data: { status: "RELEASED" } });
-  await prisma.order.update({ where: { id: orderId }, data: { status: OrderStatus.RELEASED, reportedAt: new Date() } });
-  await logAudit({ userId: user.userId, orderId, action: "REPORT_RELEASED", entityType: "Order", entityId: orderId });
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      status: OrderStatus.RELEASED,
+      reportedAt: new Date(),
+      publicToken: order.publicToken ?? newPublicReportToken(),
+    },
+  });
+  await logAudit({ vendorId: user.vendorId, userId: user.userId, orderId, action: "REPORT_RELEASED", entityType: "Order", entityId: orderId });
   revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/worklist");
+  revalidatePath("/dashboard");
+  return { ok: true as const };
+}
+
+/** Admin-only: take a released report down. The accession returns to authorized so it can be corrected and released again. */
+export async function removeReleasedReport(orderId: string) {
+  const { userId, vendorId } = await requireRole(Role.ADMIN);
+  await assertWritableLab(vendorId);
+  const order = await prisma.order.findFirst({ where: { id: orderId, vendorId } });
+  if (!order) throw new Error("Order was not found in this lab.");
+  if (order.status !== OrderStatus.RELEASED) {
+    return { ok: false as const, error: "Only a released report can be removed." };
+  }
+
+  await prisma.result.updateMany({ where: { orderId }, data: { status: ResultStatus.AUTHORIZED } });
+  await prisma.order.update({
+    where: { id: orderId },
+    data: { status: OrderStatus.AUTHORIZED, reportedAt: null },
+  });
+
+  await logAudit({
+    vendorId,
+    userId,
+    orderId,
+    action: "REPORT_REMOVED",
+    entityType: "Order",
+    entityId: orderId,
+    before: { status: order.status, reportedAt: order.reportedAt },
+    after: { status: OrderStatus.AUTHORIZED, reportedAt: null },
+  });
+
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath(`/orders/${orderId}/report`);
+  revalidatePath("/worklist");
+  revalidatePath("/dashboard");
   return { ok: true as const };
 }
 
@@ -221,7 +283,8 @@ export async function recordCriticalValueCall(params: {
   contactMethod: string;
   confirmationNote?: string;
 }) {
-  const user = await requireUser();
+  const user = await requireWritableLab();
+  await prisma.order.findFirstOrThrow({ where: { id: params.orderId, vendorId: user.vendorId } });
   const call = await prisma.criticalValueCall.create({
     data: {
       orderId: params.orderId,
@@ -232,14 +295,15 @@ export async function recordCriticalValueCall(params: {
       confirmationNote: params.confirmationNote,
     },
   });
-  await logAudit({ userId: user.userId, orderId: params.orderId, action: "CRITICAL_VALUE_CALLED", entityType: "CriticalValueCall", entityId: call.id, after: call });
+  await logAudit({ vendorId: user.vendorId, userId: user.userId, orderId: params.orderId, action: "CRITICAL_VALUE_CALLED", entityType: "CriticalValueCall", entityId: call.id, after: call });
   revalidatePath(`/orders/${params.orderId}`);
   return call;
 }
 
 /** Suggested interpretive comments for the whole order — pathologist reviews/edits before authorization. */
 export async function suggestInterpretiveComments(orderId: string) {
-  await requireUser();
+  const user = await requireTenant();
+  await prisma.order.findFirstOrThrow({ where: { id: orderId, vendorId: user.vendorId } });
   const results = await prisma.result.findMany({ where: { orderId }, include: { test: true } });
   const values: Record<string, number | null> = {};
   const ranges: Record<string, { low?: number | null; high?: number | null }> = {};

@@ -9,7 +9,8 @@ const STATUS_VARIANT: Record<OrderStatus, "outline" | "secondary" | "warning" | 
   RESULT_ENTRY: "warning",
   TECH_VERIFIED: "default",
   AUTHORIZED: "success",
-  RELEASED: "success",
+  RELEASED: "warning",
+  SENT_TO_CUSTOMER: "success",
   AMENDED: "warning",
   CANCELLED: "outline",
 };

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Aliquot setup</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #F4F6F7; color: #1C3F52; }
+      form { width: min(28rem, calc(100vw - 2rem)); display: flex; flex-direction: column; gap: 0.85rem; background: #fff; border: 1px solid #d7dee2; border-radius: 12px; padding: 1.5rem; }
+      h1 { font-size: 1.25rem; margin: 0; }
+      p { margin: 0; color: #5b6b73; font-size: 0.9rem; }
+      label { font-size: 0.8rem; font-weight: 600; }
+      input, select, button { font: inherit; padding: 0.55rem 0.7rem; border-radius: 8px; border: 1px solid #c5d0d6; }
+      button { background: #0F766E; color: white; border: 0; cursor: pointer; }
+      .field { display: flex; flex-direction: column; gap: 0.35rem; }
+    </style>
+  </head>
+  <body>
+    <form id="setup">
+      <h1>Set up this computer</h1>
+      <p>One PC in the lab should be the server. The others connect to it on the LAN.</p>
+      <div class="field">
+        <label for="mode">This computer is</label>
+        <select id="mode" name="mode">
+          <option value="server">Lab server (runs Aliquot + local Postgres)</option>
+          <option value="client">Workstation (opens the lab server)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="vendorSlug">Lab ID</label>
+        <input id="vendorSlug" name="vendorSlug" value="aliquot" required />
+      </div>
+      <div class="field" id="clientFields" hidden>
+        <label for="labServerUrl">Lab server URL</label>
+        <input id="labServerUrl" name="labServerUrl" placeholder="http://192.168.1.10:3000" />
+      </div>
+      <button type="submit">Save and start</button>
+    </form>
+    <script>
+      const mode = document.getElementById("mode");
+      const clientFields = document.getElementById("clientFields");
+      mode.addEventListener("change", () => {
+        clientFields.hidden = mode.value !== "client";
+      });
+      document.getElementById("setup").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        await window.aliquotDesktop.saveConfig({
+          mode: data.get("mode"),
+          vendorSlug: data.get("vendorSlug"),
+          labServerUrl: data.get("labServerUrl") || "http://127.0.0.1:3000",
+          port: 3000,
+          host: "0.0.0.0",
+        });
+      });
+    </script>
+  </body>
+</html>

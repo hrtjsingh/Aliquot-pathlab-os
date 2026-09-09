@@ -34,6 +34,7 @@ const TOGGLES: Array<{ key: keyof ReportLayout; label: string; hint: string }> =
   { key: "showFlags", label: "Result flags", hint: "Mark high, low, and critical values." },
   { key: "showSignature", label: "Pathologist signature", hint: "Print the authorizing pathologist." },
   { key: "showFooter", label: "Footer disclaimer", hint: "Print the legal note on every page." },
+  { key: "showQrCode", label: "QR code", hint: "Print a scan-to-view QR with the accession ID." },
 ];
 
 function flagLabel(flag: string) {
@@ -232,10 +233,13 @@ export function LabConfigForm({
           <CardContent>
             <div className="overflow-hidden rounded-md border border-border bg-white text-[#14181c] shadow-sm">
               <div
-                className={cn("border-b-2 px-4 py-3", headerCentered ? "text-center" : "flex justify-between gap-3")}
+                className={cn(
+                  "border-b-2 px-4 py-3",
+                  headerCentered && !layout.showQrCode ? "text-center" : "flex justify-between gap-3"
+                )}
                 style={{ borderColor: layout.primaryColor }}
               >
-                <div className={headerCentered ? "flex flex-col items-center" : ""}>
+                <div className={headerCentered && !layout.showQrCode ? "flex flex-col items-center" : ""}>
                   {branch.letterheadUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={branch.letterheadUrl} alt="" className="mb-1 h-8 object-contain" />
@@ -254,7 +258,7 @@ export function LabConfigForm({
                     </p>
                   ) : null}
                 </div>
-                <div className={cn("text-[10px] text-[#5b6670]", headerCentered ? "mt-2" : "text-right")}>
+                <div className={cn("text-[10px] text-[#5b6670]", headerCentered && !layout.showQrCode ? "mt-2" : "text-right")}>
                   <p>Accession: MAIN-SAMPLE</p>
                   {layout.showCollectionTimes ? (
                     <>
@@ -264,6 +268,20 @@ export function LabConfigForm({
                   ) : null}
                   <p>Reported: 09 Sep 2026, 11:40</p>
                 </div>
+                {layout.showQrCode ? (
+                  <div className="flex w-16 shrink-0 flex-col items-center">
+                    <div
+                      className="grid size-14 grid-cols-5 gap-px bg-[#14181c] p-0.5"
+                      aria-hidden
+                    >
+                      {Array.from({ length: 25 }).map((_, i) => (
+                        <span key={i} className={i % 3 === 0 ? "bg-white" : "bg-[#14181c]"} />
+                      ))}
+                    </div>
+                    <p className="mt-1 text-center text-[8px] leading-tight text-[#5b6670]">Scan to view</p>
+                    <p className="text-center text-[8px] font-semibold">MAIN-SAMPLE</p>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex justify-between gap-2 border-b border-[#dfe3e4] px-4 py-2 text-[11px]">

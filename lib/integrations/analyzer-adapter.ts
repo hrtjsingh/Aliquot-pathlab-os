@@ -53,14 +53,17 @@ export function parseASTM(_rawFrames: string): AnalyzerResultMessage[] {
  * instrumentId set (so the UI can distinguish instrument vs manual results).
  */
 export async function ingestAnalyzerMessage(msg: AnalyzerResultMessage) {
-  const order = await prisma.order.findUnique({
+  const matches = await prisma.order.findMany({
     where: { accessionNo: msg.accessionNo },
     include: { patient: true },
+    take: 2,
   });
-  if (!order) throw new Error(`No order found for accession ${msg.accessionNo}`);
+  if (matches.length === 0) throw new Error(`No order found for accession ${msg.accessionNo}`);
+  if (matches.length > 1) throw new Error(`Accession ${msg.accessionNo} is not unique across labs on this server.`);
+  const order = matches[0];
 
-  const test = await prisma.test.findUnique({
-    where: { code: msg.testCode },
+  const test = await prisma.test.findFirst({
+    where: { vendorId: order.vendorId, code: msg.testCode },
     include: { referenceRanges: true, criticalThresholds: true },
   });
   if (!test) throw new Error(`Unknown test code from analyzer: ${msg.testCode}`);

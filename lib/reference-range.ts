@@ -48,9 +48,9 @@ export function resolveReferenceRange(
 export function formatRangeText(r: ReferenceRange | null): string {
   if (!r) return "Not established";
   if (r.textRange) return r.textRange;
-  if (r.low != null && r.high != null) return `${r.low} - ${r.high}`;
-  if (r.low != null) return `> ${r.low}`;
-  if (r.high != null) return `< ${r.high}`;
+  if (r.low != null && r.high != null) return `${r.low} – ${r.high}`;
+  if (r.low != null) return `≥ ${r.low}`;
+  if (r.high != null) return `≤ ${r.high}`;
   return "Not established";
 }
 
@@ -64,7 +64,7 @@ export function ageInDays(dob: Date | null, ageYearsFallback: number | null, age
     const ms = Date.now() - dob.getTime();
     return Math.floor(ms / (1000 * 60 * 60 * 24));
   }
-  if (ageMonthsFallback) return Math.round(ageMonthsFallback * 30.44);
-  if (ageYearsFallback) return Math.round(ageYearsFallback * 365.25);
-  return 365.25 * 30; // default to 30y adult if truly unknown, so lookup doesn't crash
+  if (ageMonthsFallback != null && ageMonthsFallback > 0) return Math.round(ageMonthsFallback * 30.44);
+  if (ageYearsFallback != null && ageYearsFallback > 0) return Math.round(ageYearsFallback * 365.25);
+  return 365.25 * 30;
 }

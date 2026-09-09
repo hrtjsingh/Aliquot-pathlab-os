@@ -23,10 +23,13 @@ export function BrandMark({ className }: { className?: string }) {
 export function BrandLockup({
   invert = false,
   compact = false,
+  surface = "sidebar",
 }: {
   invert?: boolean;
   compact?: boolean;
+  surface?: "sidebar" | "page";
 }) {
+  const onPage = surface === "page";
   return (
     <div className="flex items-center gap-2">
       <BrandMark
@@ -39,7 +42,7 @@ export function BrandLockup({
         <p
           className={cn(
             "text-sm font-semibold tracking-tight",
-            invert ? "text-brand-foreground" : "text-sidebar-foreground"
+            invert ? "text-brand-foreground" : onPage ? "text-foreground" : "text-sidebar-foreground"
           )}
         >
           Aliquot
@@ -47,7 +50,7 @@ export function BrandLockup({
         <p
           className={cn(
             "text-[11px]",
-            invert ? "text-brand-foreground/65" : "text-sidebar-muted"
+            invert ? "text-brand-foreground/65" : onPage ? "text-muted-foreground" : "text-sidebar-muted"
           )}
         >
           Lab reports

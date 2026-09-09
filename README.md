@@ -1,33 +1,72 @@
-# PathLab LIMS
+# Aliquot LIMS
 
-A pathology lab report generation & workflow system built on Next.js 14 (App
+A pathology lab report generation and workflow system built on Next.js (App
 Router), PostgreSQL, and Prisma — covering the full order → result → verify →
-authorize → release lifecycle across Hematology, Clinical Chemistry,
-Microbiology, Serology, Coagulation, Urinalysis, Histopathology/Cytology, and
-Molecular testing.
+authorize → release lifecycle.
 
-## Quick start
+Each lab company is a **vendor**. Login uses a lab ID (vendor slug) plus email
+and password so two labs can use the same email without sharing patients,
+catalogs, or accessions.
+
+## Quick start (local Postgres)
+
+The working database is Postgres on the lab PC. Neon is optional backup only.
 
 ```bash
-npm install                        # also runs `prisma generate` via postinstall
-cp .env.example .env               # then fill in DATABASE_URL and AUTH_SECRET
-npx prisma migrate dev --name init # creates the schema in your Postgres DB
-npm run db:seed                    # seeds branches, demo users, CBC/LFT/KFT/Lipid panels + reference ranges
+npm install
+cp .env.example .env               # DATABASE_URL already points at local Postgres :5433
+# AUTH_SECRET — generate with: openssl rand -base64 32
+npm run db:up                      # starts project-local Postgres on 5433
+npx prisma migrate deploy
+npm run db:seed
 npm run dev
 ```
 
-Demo logins (seeded, password `Password123!` for all):
-`admin@lab.test`, `frontdesk@lab.test`, `tech@lab.test`, `pathologist@lab.test`.
+Demo login: lab ID `aliquot`, `admin@lab.test`, password `Password123!`.
+Each lab has one login.
 
-`AUTH_SECRET` — generate with `openssl rand -base64 32`.
+To keep Neon as a vendor-scoped backup, set `CLOUD_DATABASE_URL` to the Neon
+URL and run `npm run db:migrate:cloud` once so the cloud schema matches.
 
-**Note on this build environment:** the sandbox this was built in has no
-network access to `binaries.prisma.sh` (Prisma's engine-binary CDN) or to a
-live Postgres instance, so `prisma generate` / `migrate` / `next build` could
-not be executed here to confirm a clean compile. The code is written and
-reviewed carefully, but run `npm install && npx prisma generate` and a `next
-build` yourself as the first step — file an issue against whichever line
-number the compiler flags, if any, and it'll be a fast fix.
+## Desktop (Electron)
+
+One PC in the lab is the **server** (Next.js + local Postgres). Other PCs are
+**clients** and only open a window to that server.
+
+```bash
+npm run db:up && npm run dev       # on the lab-server PC
+npm run electron                   # first run asks server vs workstation
+```
+
+Packaged Linux installer: `npm run desktop:build`.
+
+**Sync** in the sidebar flushes queued browser changes, refreshes the local
+cache, and (when online and `CLOUD_DATABASE_URL` is set) pushes this vendor’s
+rows to Neon and pulls HQ catalog/user edits. Authorized results are not
+silently overwritten.
+
+## Super admin (Aliquot HQ)
+
+A separate Vite app in `hq/` manages labs, users, and billing against the
+**online master** (`CLOUD_DATABASE_URL` / Neon, or local Postgres if Neon is
+not set). HQ signs each lab’s subscription with an Ed25519 lease. The LIMS
+only honours a verified signature — changing `expiresAt` in the lab’s local
+database does not extend access.
+
+```bash
+npm run db:migrate                 # or migrate deploy — adds Plan / Subscription / SuperAdmin
+npm run db:migrate:cloud           # same schema on Neon
+npm run hq:install
+npm run hq                         # API :8787 and UI http://127.0.0.1:5174
+```
+
+HQ login: `hq@aliquot.test` / `Password123!`.
+
+First HQ start writes the public key to `.license-public.pem` (gitignored).
+The LIMS reads that file (or `LICENSE_PUBLIC_KEY`) and blocks writes when the
+signed lease is missing, expired, or tampered with. New labs start on a 10-day
+trial. HQ then applies a paid term: 3 months ₹2,000, 6 months ₹3,500, or 1 year
+₹6,000. Each apply re-signs the master lease.
 
 ## What's actually implemented (not just modeled)
 
@@ -148,7 +187,7 @@ and traceability matrix, not just working code).
 ## Suggested next steps, in order
 
 1. Get this running against a real Postgres instance and seed data; click
-   through the full order → report flow with the demo accounts.
+   through the full order → report flow with the demo login.
 2. Add barcode label printing (Code128 on the accession label) — quick win,
    real workflow gap.
 3. Wire one delivery channel for real (email is the easiest first target).

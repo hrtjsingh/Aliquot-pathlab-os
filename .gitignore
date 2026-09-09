@@ -19,6 +19,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -45,3 +46,9 @@ next-env.d.ts
 
 # local postgres data dir (dev cluster on :5433)
 /.local-pg/
+
+# HQ Vite app
+/hq/node_modules/
+/hq/dist/
+/hq/.data/
+.license-public.pem

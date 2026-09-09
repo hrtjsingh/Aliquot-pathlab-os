@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   ClipboardList,
@@ -17,6 +16,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLockup, BrandMark } from "@/components/brand-mark";
+import { NavPendingProvider } from "@/components/page-loader";
+import { NavigationLink } from "@/components/navigation-link";
+import { DataSyncProvider, SyncControl } from "@/components/data-sync";
+import { SubscriptionBanner, type LicenseBannerData } from "@/components/subscription-banner";
+import type { LabSnapshot } from "@/app/actions/offline";
 import { ROLE_LABELS } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +29,7 @@ const NAV: Array<{ href: string; label: string; icon: typeof LayoutDashboard; ro
   { href: "/patients", label: "Patients", icon: Users },
   { href: "/worklist", label: "Worklist", icon: ClipboardList },
   { href: "/orders/new", label: "New Order", icon: FlaskConical },
-  { href: "/admin/tests", label: "Test Master", icon: Settings },
+  { href: "/admin/tests", label: "Test Master", icon: Settings, roles: ["ADMIN"] },
   { href: "/admin/lab", label: "Lab config", icon: FileOutput, roles: ["ADMIN"] },
 ];
 
@@ -38,10 +42,14 @@ function navActive(href: string, pathname: string) {
 export function AppShell({
   user,
   signOutAction,
+  initialSnapshot = null,
+  license = null,
   children,
 }: {
-  user: { name: string | null | undefined; role: string };
+  user: { name: string | null | undefined; role: string; vendorSlug?: string | null };
   signOutAction: () => Promise<void>;
+  initialSnapshot?: LabSnapshot | null;
+  license?: LicenseBannerData | null;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -51,12 +59,13 @@ export function AppShell({
 
   const nav = (
     <nav className="flex flex-1 flex-col gap-0.5 p-2">
-      {navItems.map((item) => {
+        {navItems.map((item) => {
         const active = navActive(item.href, pathname);
         return (
-          <Link
+          <NavigationLink
             key={item.href}
-            href={item.href as never}
+            href={item.href}
+            active={active}
             onClick={() => setMobileOpen(false)}
             className={cn(
               "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors",
@@ -64,11 +73,10 @@ export function AppShell({
                 ? "bg-sidebar-accent font-medium text-sidebar-foreground"
                 : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
             )}
-            aria-current={active ? "page" : undefined}
           >
             <item.icon className={cn("size-4", active ? "text-accent" : "text-sidebar-muted")} />
             {item.label}
-          </Link>
+          </NavigationLink>
         );
       })}
     </nav>
@@ -79,7 +87,9 @@ export function AppShell({
       <div className="px-1">
         <p className="truncate text-sm font-medium text-sidebar-foreground">{user.name}</p>
         <p className="text-xs text-sidebar-muted">{ROLE_LABELS[user.role] ?? user.role}</p>
+        {user.vendorSlug ? <p className="text-[11px] text-sidebar-muted">Lab {user.vendorSlug}</p> : null}
       </div>
+      <SyncControl />
       <ThemeToggle />
       <form action={signOutAction}>
         <Button variant="ghost" size="sm" className="w-full justify-start" type="submit">
@@ -91,6 +101,8 @@ export function AppShell({
   );
 
   return (
+    <DataSyncProvider initialSnapshot={initialSnapshot}>
+    <NavPendingProvider>
     <div className="flex min-h-full">
       <aside className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
         <div className="flex h-14 items-center border-b border-sidebar-border px-3">
@@ -108,7 +120,10 @@ export function AppShell({
             </Button>
             <span className="text-sm font-semibold">Aliquot</span>
           </div>
-          <ThemeToggle compact />
+          <div className="flex items-center gap-1">
+            <SyncControl compact />
+            <ThemeToggle compact />
+          </div>
         </header>
 
         {mobileOpen ? (
@@ -135,8 +150,13 @@ export function AppShell({
           </div>
         ) : null}
 
-        <main className="min-h-0 flex-1 bg-background">{children}</main>
+        <main className="min-h-0 flex-1 bg-background">
+          <SubscriptionBanner license={license} />
+          {children}
+        </main>
       </div>
     </div>
+    </NavPendingProvider>
+    </DataSyncProvider>
   );
 }

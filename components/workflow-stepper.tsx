@@ -20,6 +20,7 @@ const SHORT: Record<OrderStatus, string> = {
   TECH_VERIFIED: "Verified",
   AUTHORIZED: "Authorized",
   RELEASED: "Released",
+  SENT_TO_CUSTOMER: "Sent",
   AMENDED: "Amended",
   CANCELLED: "Cancelled",
 };

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { UserPlus } from "lucide-react";
 import { createPatient } from "@/app/actions/patients";
+import { useDataSync } from "@/components/data-sync";
+import { enqueueOp, formEntries, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +27,7 @@ export function PatientRegisterDialog({
   onRegistered?: (patient: { id: string; mrn: string; firstName: string; lastName: string | null }) => void;
 }) {
   const router = useRouter();
+  const { patchSnapshot } = useDataSync();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -32,18 +35,62 @@ export function PatientRegisterDialog({
   function submit(formData: FormData) {
     setError(null);
     startTransition(async () => {
-      const result = await createPatient(formData);
-      if (!result.ok) {
-        setError(result.error);
-        toast.error(result.error);
+      const firstName = String(formData.get("firstName") ?? "");
+      const lastName = String(formData.get("lastName") ?? "") || null;
+      const mrn = String(formData.get("mrn") ?? "");
+      const gender = String(formData.get("gender") ?? "");
+      const ageRaw = String(formData.get("ageYears") ?? "");
+      const ageYears = ageRaw ? Number(ageRaw) : null;
+
+      async function rememberPatient(id: string) {
+        await patchSnapshot((snapshot) => {
+          if (snapshot.patients.some((patient) => patient.id === id)) return snapshot;
+          return {
+            ...snapshot,
+            patients: [{ id, mrn, firstName, lastName, gender, ageYears }, ...snapshot.patients],
+          };
+        });
+      }
+
+      async function queuedLocally() {
+        const localId = `offline-${crypto.randomUUID()}`;
+        await enqueueOp({ type: "createPatient", entries: formEntries(formData), localId });
+        await rememberPatient(localId);
+        toast.success("Patient queued. Tap Sync when you’re back online to register it.");
+        setOpen(false);
+        if (onRegistered) {
+          onRegistered({ id: localId, mrn, firstName, lastName });
+        }
+      }
+
+      if (isBrowserOffline()) {
+        await queuedLocally();
         return;
       }
-      toast.success("Patient registered. Continue by creating an order.");
-      setOpen(false);
-      if (onRegistered) {
-        onRegistered({ id: result.patientId, mrn: result.mrn, firstName: result.firstName, lastName: result.lastName });
-      } else {
-        router.push(`/orders/new?patientId=${result.patientId}`);
+
+      try {
+        const result = await createPatient(formData);
+        if (!result.ok) {
+          setError(result.error);
+          toast.error(result.error);
+          return;
+        }
+        toast.success("Patient registered. Continue by creating an order.");
+        setOpen(false);
+        await rememberPatient(result.patientId);
+        if (onRegistered) {
+          onRegistered({ id: result.patientId, mrn: result.mrn, firstName: result.firstName, lastName: result.lastName });
+        } else {
+          router.push(`/orders/new?patientId=${result.patientId}`);
+        }
+      } catch (error) {
+        if (isNetworkError(error)) {
+          await queuedLocally();
+          return;
+        }
+        const message = error instanceof Error ? error.message : "Could not register this patient.";
+        setError(message);
+        toast.error(message);
       }
     });
   }

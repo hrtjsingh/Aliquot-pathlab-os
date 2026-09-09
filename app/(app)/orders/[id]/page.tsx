@@ -9,9 +9,13 @@ import { WorkflowStepper } from "@/components/workflow-stepper";
 import { ResultTable } from "./result-table.client";
 import { OrderActions } from "./order-actions.client";
 import { CriticalCallDialog } from "./critical-call-dialog";
+import { ageInDays, formatRangeText, resolveReferenceRange } from "@/lib/reference-range";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText } from "lucide-react";
+import { FileText, QrCode } from "lucide-react";
+import { RemoveReportButton } from "./remove-report-button";
+import { ensurePublicReportToken, publicReportPath } from "@/lib/public-report";
+import { isCustomerVisibleReport } from "@/lib/workflow";
 
 const NEXT_STEP: Record<string, string> = {
   ORDER_CREATED: "Collect the sample, then mark it collected and received when it is on the bench.",
@@ -19,8 +23,9 @@ const NEXT_STEP: Record<string, string> = {
   SAMPLE_RECEIVED: "Enter numeric or text results. Each value saves when you leave the field.",
   RESULT_ENTRY: "Review flags, log any critical call-back, then submit for technologist verification.",
   TECH_VERIFIED: "A pathologist reviews and authorizes the report.",
-  AUTHORIZED: "Release the report so clinicians can view and print it.",
-  RELEASED: "The report is available. Open it to print or download the PDF.",
+  AUTHORIZED: "Release the report so it can be printed, sent on WhatsApp, or collected.",
+  RELEASED: "The report is on the worklist until it is sent on WhatsApp to the patient’s registered number or marked collected at the counter. Patients can also scan the QR on the PDF.",
+  SENT_TO_CUSTOMER: "This report was sent or collected. Open the lab preview to reprint. An amendment starts a new accession.",
   AMENDED: "This accession was amended. Open the linked new order for the current results.",
   CANCELLED: "This order is cancelled and cannot move forward.",
 };
@@ -32,9 +37,17 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
   const session = await auth();
   const role = (session?.user as { role?: string })?.role ?? "";
+  const ageDays = ageInDays(order.patient.dob, order.patient.ageYears, order.patient.ageMonths);
+  const rangeCtx = {
+    gender: order.patient.gender,
+    ageDays,
+    isPregnant: order.patient.isPregnant,
+    pregnancyTrimester: order.patient.pregnancyWeeks ? Math.ceil(order.patient.pregnancyWeeks / 13) : null,
+  };
 
   const rows = order.orderTests.map((ot) => {
     const r = order.results.find((res) => res.testId === ot.testId);
+    const catalogRange = formatRangeText(resolveReferenceRange(ot.test.referenceRanges, rangeCtx));
     return {
       testId: ot.testId,
       code: ot.test.code,
@@ -45,7 +58,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       isDerived: ot.test.isDerived,
       numericValue: r?.numericValue ?? null,
       textValue: r?.textValue ?? null,
-      referenceRangeText: r?.referenceRangeText ?? null,
+      referenceRangeText: catalogRange,
       flag: r?.flag ?? "NORMAL",
       deltaFlag: r?.deltaFlag ?? false,
       status: r?.status ?? null,
@@ -75,6 +88,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const hasOpenCritical = rows.some((r) => r.flag === "CRITICAL_LOW" || r.flag === "CRITICAL_HIGH");
   const criticalLogged = order.criticalCalls.length > 0;
   const editable = order.status === "RESULT_ENTRY" || order.status === "SAMPLE_RECEIVED";
+  const patientReportHref = isCustomerVisibleReport(order.status)
+    ? publicReportPath(order.publicToken ?? (await ensurePublicReportToken(order.id)))
+    : null;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
@@ -85,13 +101,24 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <>
             <PriorityBadge priority={order.priority} />
             <StatusBadge status={order.status} />
-            {order.status === "RELEASED" ? (
+            {isCustomerVisibleReport(order.status) ? (
               <Link href={`/orders/${id}/report` as never}>
                 <Button size="sm">
                   <FileText />
-                  View report
+                  Lab preview
                 </Button>
               </Link>
+            ) : null}
+            {patientReportHref ? (
+              <Button asChild size="sm" variant="outline">
+                <a href={patientReportHref} target="_blank" rel="noreferrer">
+                  <QrCode />
+                  Open patient page
+                </a>
+              </Button>
+            ) : null}
+            {order.status === "RELEASED" && role === "ADMIN" ? (
+              <RemoveReportButton orderId={id} accessionNo={order.accessionNo} />
             ) : null}
           </>
         }
@@ -104,7 +131,13 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       {hasOpenCritical && !criticalLogged ? <CriticalCallDialog orderId={id} accessionNo={order.accessionNo} /> : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <OrderActions orderId={id} status={order.status} accessionNo={order.accessionNo} role={role} />
+        <OrderActions
+          orderId={id}
+          status={order.status}
+          accessionNo={order.accessionNo}
+          role={role}
+          phone={order.patient.phone}
+        />
       </div>
 
       <Card>

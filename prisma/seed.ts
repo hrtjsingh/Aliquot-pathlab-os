@@ -1,20 +1,28 @@
 import { PrismaClient, TestCategory, ResultDataType, Gender, Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { DEFAULT_REPORT_LAYOUT } from "../lib/report-layout";
+import { BILLING_PLANS, LEGACY_PLAN_CODES } from "../lib/billing-plans";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const branch = await prisma.branch.upsert({
-    where: { code: "MAIN" },
+  const vendor = await prisma.vendor.upsert({
+    where: { slug: "aliquot" },
     update: {},
-    create: { name: "Main Lab", code: "MAIN", nablNo: "NABL-0000-EXAMPLE", address: "12 Clinical Avenue, Sample City" },
+    create: { id: "clvendor_aliquot_default", slug: "aliquot", name: "Aliquot Lab" },
+  });
+
+  const branch = await prisma.branch.upsert({
+    where: { vendorId_code: { vendorId: vendor.id, code: "MAIN" } },
+    update: {},
+    create: { vendorId: vendor.id, name: "Main Lab", code: "MAIN", nablNo: "NABL-0000-EXAMPLE", address: "12 Clinical Avenue, Sample City" },
   });
 
   const existingTemplate = await prisma.reportTemplate.findFirst({ where: { branchId: branch.id, isDefault: true } });
   if (!existingTemplate) {
     await prisma.reportTemplate.create({
       data: {
+        vendorId: vendor.id,
         branchId: branch.id,
         name: "Default laboratory report",
         isDefault: true,
@@ -24,19 +32,25 @@ async function main() {
   }
 
   const pw = await bcrypt.hash("Password123!", 10);
-  const users = [
-    { email: "admin@lab.test", name: "Admin User", role: Role.ADMIN },
-    { email: "frontdesk@lab.test", name: "Priya Sharma", role: Role.FRONTDESK },
-    { email: "tech@lab.test", name: "Rahul Verma", role: Role.TECHNOLOGIST },
-    { email: "pathologist@lab.test", name: "Dr. Anita Rao", role: Role.PATHOLOGIST, registrationNo: "MCI-12345" },
-  ];
-  for (const u of users) {
-    await prisma.user.upsert({
-      where: { email: u.email },
-      update: {},
-      create: { ...u, passwordHash: pw, branchId: branch.id },
-    });
-  }
+  await prisma.user.upsert({
+    where: { vendorId_email: { vendorId: vendor.id, email: "admin@lab.test" } },
+    update: { name: "Admin User", role: Role.ADMIN, active: true, branchId: branch.id },
+    create: {
+      email: "admin@lab.test",
+      name: "Admin User",
+      role: Role.ADMIN,
+      vendorId: vendor.id,
+      passwordHash: pw,
+      branchId: branch.id,
+    },
+  });
+  await prisma.user.updateMany({
+    where: {
+      vendorId: vendor.id,
+      email: { in: ["frontdesk@lab.test", "tech@lab.test", "pathologist@lab.test"] },
+    },
+    data: { active: false },
+  });
 
   // ---------------------------------------------------------------- Hematology
   const cbcTests = [
@@ -50,10 +64,10 @@ async function main() {
   ];
   for (const [idx, t] of cbcTests.entries()) {
     await prisma.test.upsert({
-      where: { code: t.code },
+      where: { vendorId_code: { vendorId: vendor.id, code: t.code } },
       update: {},
       create: {
-        code: t.code, name: t.name, category: TestCategory.HEMATOLOGY, specimenType: "Whole Blood EDTA",
+        vendorId: vendor.id, code: t.code, name: t.name, category: TestCategory.HEMATOLOGY, specimenType: "Whole Blood EDTA",
         unit: t.unit, decimalPrecision: t.precision, dataType: ResultDataType.NUMERIC,
         autoVerifyEligible: true, turnaroundHours: 4,
       },
@@ -68,10 +82,10 @@ async function main() {
   ];
   for (const t of derivedHema) {
     await prisma.test.upsert({
-      where: { code: t.code },
+      where: { vendorId_code: { vendorId: vendor.id, code: t.code } },
       update: {},
       create: {
-        code: t.code, name: t.name, category: TestCategory.HEMATOLOGY, specimenType: "Whole Blood EDTA",
+        vendorId: vendor.id, code: t.code, name: t.name, category: TestCategory.HEMATOLOGY, specimenType: "Whole Blood EDTA",
         unit: t.unit, decimalPrecision: t.precision, dataType: ResultDataType.NUMERIC,
         isDerived: true, derivationRule: t.rule, turnaroundHours: 4,
       },
@@ -97,10 +111,10 @@ async function main() {
   ];
   for (const t of chemTests) {
     await prisma.test.upsert({
-      where: { code: t.code },
+      where: { vendorId_code: { vendorId: vendor.id, code: t.code } },
       update: {},
       create: {
-        code: t.code, name: t.name, category: TestCategory.CLINICAL_CHEMISTRY, specimenType: "Serum",
+        vendorId: vendor.id, code: t.code, name: t.name, category: TestCategory.CLINICAL_CHEMISTRY, specimenType: "Serum",
         unit: t.unit, decimalPrecision: t.precision ?? 0, dataType: ResultDataType.NUMERIC,
         autoVerifyEligible: true, turnaroundHours: 6,
       },
@@ -120,10 +134,10 @@ async function main() {
   ];
   for (const t of derivedChem) {
     await prisma.test.upsert({
-      where: { code: t.code },
+      where: { vendorId_code: { vendorId: vendor.id, code: t.code } },
       update: {},
       create: {
-        code: t.code, name: t.name, category: TestCategory.CLINICAL_CHEMISTRY, specimenType: "Serum",
+        vendorId: vendor.id, code: t.code, name: t.name, category: TestCategory.CLINICAL_CHEMISTRY, specimenType: "Serum",
         unit: t.unit, decimalPrecision: t.precision, dataType: ResultDataType.NUMERIC,
         isDerived: true, derivationRule: t.rule, turnaroundHours: 6,
       },
@@ -132,9 +146,13 @@ async function main() {
 
   // Panels
   async function makePanel(code: string, name: string, category: TestCategory, testCodes: string[]) {
-    const panel = await prisma.panel.upsert({ where: { code }, update: {}, create: { code, name, category } });
+    const panel = await prisma.panel.upsert({
+      where: { vendorId_code: { vendorId: vendor.id, code } },
+      update: {},
+      create: { vendorId: vendor.id, code, name, category },
+    });
     for (const [i, tc] of testCodes.entries()) {
-      const test = await prisma.test.findUniqueOrThrow({ where: { code: tc } });
+      const test = await prisma.test.findUniqueOrThrow({ where: { vendorId_code: { vendorId: vendor.id, code: tc } } });
       await prisma.panelTest.upsert({
         where: { panelId_testId: { panelId: panel.id, testId: test.id } },
         update: { sortOrder: i },
@@ -199,7 +217,9 @@ async function main() {
     { code: "DE_RITIS", low: 0.5, high: 2.0, isDefault: true },
   ];
   for (const r of ranges) {
-    const test = await prisma.test.findUniqueOrThrow({ where: { code: r.code } });
+    const test = await prisma.test.findUniqueOrThrow({ where: { vendorId_code: { vendorId: vendor.id, code: r.code } } });
+    const existingRange = await prisma.referenceRange.findFirst({ where: { testId: test.id, isDefault: r.isDefault ?? false, gender: r.gender ?? null } });
+    if (existingRange) continue;
     await prisma.referenceRange.create({
       data: {
         testId: test.id,
@@ -223,12 +243,41 @@ async function main() {
     { code: "CREATININE", high: 6 },
   ];
   for (const c of criticalThresholds) {
-    const test = await prisma.test.findUniqueOrThrow({ where: { code: c.code } });
+    const test = await prisma.test.findUniqueOrThrow({ where: { vendorId_code: { vendorId: vendor.id, code: c.code } } });
+    const existingCritical = await prisma.criticalThreshold.findFirst({ where: { testId: test.id } });
+    if (existingCritical) continue;
     await prisma.criticalThreshold.create({ data: { testId: test.id, low: c.low ?? null, high: c.high ?? null } });
   }
 
   console.log("Seed complete.");
-  console.log("Login as admin@lab.test / frontdesk@lab.test / tech@lab.test / pathologist@lab.test — password: Password123!");
+  console.log("Lab ID: aliquot. Login as admin@lab.test — password: Password123!");
+
+  const hqHash = await bcrypt.hash("Password123!", 10);
+  await prisma.superAdmin.upsert({
+    where: { email: "hq@aliquot.test" },
+    update: { name: "Aliquot HQ", active: true },
+    create: { email: "hq@aliquot.test", name: "Aliquot HQ", passwordHash: hqHash },
+  });
+  const plans = BILLING_PLANS;
+  for (const plan of plans) {
+    await prisma.plan.upsert({
+      where: { code: plan.code },
+      update: {
+        name: plan.name,
+        seats: plan.seats,
+        intervalMonths: plan.intervalMonths,
+        intervalDays: plan.intervalDays,
+        priceInr: plan.priceInr,
+        active: true,
+      },
+      create: { ...plan },
+    });
+  }
+  await prisma.plan.updateMany({
+    where: { code: { in: [...LEGACY_PLAN_CODES] } },
+    data: { active: false },
+  });
+  console.log("HQ login: hq@aliquot.test — password: Password123! (start with npm run hq)");
 }
 
 main()

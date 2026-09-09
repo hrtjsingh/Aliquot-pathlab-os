@@ -3,8 +3,28 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1"],
   turbopack: {
     root: path.dirname(fileURLToPath(import.meta.url)),
+  },
+  experimental: {
+    useOffline: true,
+    staleTimes: {
+      dynamic: 86400,
+      static: 86400,
+    },
+  },
+  output: "standalone",
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+    ];
   },
 };
 

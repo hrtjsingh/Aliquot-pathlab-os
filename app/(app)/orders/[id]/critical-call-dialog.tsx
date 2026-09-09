@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { recordCriticalValueCall } from "@/app/actions/results";
+import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,18 +26,31 @@ export function CriticalCallDialog({ orderId, accessionNo }: { orderId: string; 
 
   function submit(formData: FormData) {
     startTransition(async () => {
+      const params = {
+        orderId,
+        notifiedName: String(formData.get("notifiedName")),
+        notifiedRole: String(formData.get("notifiedRole") || ""),
+        contactMethod: String(formData.get("contactMethod") || "Phone"),
+        confirmationNote: String(formData.get("confirmationNote") || ""),
+      };
       try {
-        await recordCriticalValueCall({
-          orderId,
-          notifiedName: String(formData.get("notifiedName")),
-          notifiedRole: String(formData.get("notifiedRole") || ""),
-          contactMethod: String(formData.get("contactMethod") || "Phone"),
-          confirmationNote: String(formData.get("confirmationNote") || ""),
-        });
+        if (isBrowserOffline()) {
+          await enqueueOp({ type: "recordCriticalValueCall", params });
+          toast.success("Call-back queued. It will log when you’re back online.");
+          setOpen(false);
+          return;
+        }
+        await recordCriticalValueCall(params);
         toast.success("Critical value call-back logged.");
         setOpen(false);
         router.refresh();
       } catch (error) {
+        if (isNetworkError(error)) {
+          await enqueueOp({ type: "recordCriticalValueCall", params });
+          toast.success("Call-back queued. It will log when you’re back online.");
+          setOpen(false);
+          return;
+        }
         toast.error(error instanceof Error ? error.message : "Could not log the call-back.");
       }
     });

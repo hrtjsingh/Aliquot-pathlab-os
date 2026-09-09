@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/rbac";
+import { requireTenant, requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
@@ -11,18 +11,27 @@ const PatientSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().optional(),
   dob: z.string().optional(), // yyyy-mm-dd, optional if ageYears supplied
-  ageYears: z.coerce.number().int().min(0).max(130).optional(),
-  ageMonths: z.coerce.number().int().min(0).max(11).optional(),
+  ageYears: z.preprocess(
+    (value) => (value === "" || value == null ? undefined : value),
+    z.coerce.number().int().min(0).max(130).optional()
+  ),
+  ageMonths: z.preprocess(
+    (value) => (value === "" || value == null ? undefined : value),
+    z.coerce.number().int().min(0).max(11).optional()
+  ),
   gender: z.enum(["MALE", "FEMALE", "OTHER"]),
   isPregnant: z.boolean().optional(),
-  pregnancyWeeks: z.coerce.number().int().min(1).max(45).optional(),
+  pregnancyWeeks: z.preprocess(
+    (value) => (value === "" || value == null ? undefined : value),
+    z.coerce.number().int().min(1).max(45).optional()
+  ),
   phone: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
   address: z.string().optional(),
 });
 
 export async function createPatient(formData: FormData) {
-  const user = await requireUser();
+  const user = await requireWritableLab();
 
   const raw = Object.fromEntries(formData.entries());
   const parsed = PatientSchema.safeParse({
@@ -36,6 +45,7 @@ export async function createPatient(formData: FormData) {
 
   const patient = await prisma.patient.create({
     data: {
+      vendorId: user.vendorId,
       mrn: data.mrn,
       firstName: data.firstName,
       lastName: data.lastName || null,
@@ -51,18 +61,27 @@ export async function createPatient(formData: FormData) {
     },
   });
 
-  await logAudit({ userId: user.userId, action: "PATIENT_REGISTERED", entityType: "Patient", entityId: patient.id, after: patient });
+  await logAudit({ vendorId: user.vendorId, userId: user.userId, action: "PATIENT_REGISTERED", entityType: "Patient", entityId: patient.id, after: patient });
   revalidatePath("/patients");
-  return { ok: true as const, patientId: patient.id, mrn: patient.mrn, firstName: patient.firstName, lastName: patient.lastName };
+  return {
+    ok: true as const,
+    patientId: patient.id,
+    mrn: patient.mrn,
+    firstName: patient.firstName,
+    lastName: patient.lastName,
+    ageYears: patient.ageYears,
+    gender: patient.gender,
+  };
 }
 
 export async function searchPatients(query: string) {
-  await requireUser();
+  const user = await requireTenant();
   if (!query.trim()) {
-    return prisma.patient.findMany({ orderBy: { createdAt: "desc" }, take: 25 });
+    return prisma.patient.findMany({ where: { vendorId: user.vendorId }, orderBy: { createdAt: "desc" }, take: 25 });
   }
   return prisma.patient.findMany({
     where: {
+      vendorId: user.vendorId,
       OR: [
         { mrn: { contains: query, mode: "insensitive" } },
         { firstName: { contains: query, mode: "insensitive" } },

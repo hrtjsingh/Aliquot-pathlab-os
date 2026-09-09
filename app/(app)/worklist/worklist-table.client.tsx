@@ -1,22 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { OrderStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { PriorityBadge, StatusBadge } from "@/components/status-badge";
+import { useDataSync } from "@/components/data-sync";
 import { transitionOrderStatus } from "@/app/actions/orders";
-import { ClipboardList } from "lucide-react";
+import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
+import { HandoverActions } from "@/app/(app)/orders/[id]/handover-actions.client";
 
 type WorklistOrder = {
   id: string;
   accessionNo: string;
   status: OrderStatus;
   priority: string;
-  patient: { firstName: string; lastName: string | null };
+  patient: { firstName: string; lastName: string | null; phone?: string | null };
   testCount: number;
 };
 
@@ -38,14 +39,31 @@ const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string; title:
 };
 
 export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
-  const router = useRouter();
+  const { patchSnapshot } = useDataSync();
+
+  async function applyStatus(orderId: string, status: OrderStatus) {
+    await patchSnapshot((snapshot) => ({
+      ...snapshot,
+      worklist:
+        status === "SENT_TO_CUSTOMER"
+          ? snapshot.worklist.filter((order) => order.id !== orderId)
+          : snapshot.worklist.map((order) => (order.id === orderId ? { ...order, status } : order)),
+      dashboard: {
+        ...snapshot.dashboard,
+        awaitingHandover:
+          status === "SENT_TO_CUSTOMER"
+            ? Math.max(0, (snapshot.dashboard.awaitingHandover ?? 0) - 1)
+            : snapshot.dashboard.awaitingHandover,
+      },
+    }));
+  }
 
   if (orders.length === 0) {
     return (
       <EmptyState
         icon={<ClipboardList className="size-5" />}
         title="No active orders"
-        description="When an order is created, it appears here until the report is released."
+        description="When an order is created, it appears here until the report is sent on WhatsApp or collected."
         action={
           <Link href={"/orders/new" as never}>
             <Button>Create an order</Button>
@@ -85,7 +103,15 @@ export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
               </TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
-                  {next ? (
+                  {o.status === "RELEASED" ? (
+                    <HandoverActions
+                      orderId={o.id}
+                      accessionNo={o.accessionNo}
+                      phone={o.patient.phone ?? null}
+                      size="sm"
+                      onDone={() => applyStatus(o.id, "SENT_TO_CUSTOMER")}
+                    />
+                  ) : next ? (
                     <ConfirmDialog
                       title={next.title}
                       description={`${next.description} Accession ${o.accessionNo}.`}
@@ -97,8 +123,22 @@ export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
                         </Button>
                       }
                       onConfirm={async () => {
-                        await transitionOrderStatus(o.id, next.to);
-                        router.refresh();
+                        if (isBrowserOffline()) {
+                          await enqueueOp({ type: "transitionOrderStatus", orderId: o.id, to: next.to });
+                          await applyStatus(o.id, next.to);
+                          return { queued: true as const };
+                        }
+                        try {
+                          await transitionOrderStatus(o.id, next.to);
+                          await applyStatus(o.id, next.to);
+                        } catch (error) {
+                          if (isNetworkError(error)) {
+                            await enqueueOp({ type: "transitionOrderStatus", orderId: o.id, to: next.to });
+                            await applyStatus(o.id, next.to);
+                            return { queued: true as const };
+                          }
+                          throw error;
+                        }
                       }}
                     />
                   ) : null}

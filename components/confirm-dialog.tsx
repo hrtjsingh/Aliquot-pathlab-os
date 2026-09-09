@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 
-type ConfirmResult = void | { ok: true } | { ok: false; error: string };
+type ConfirmResult = void | { ok: true; whatsappUrl?: string } | { ok: false; error: string } | { queued: true };
 
 export function ConfirmDialog({
   trigger,
@@ -40,9 +40,17 @@ export function ConfirmDialog({
     startTransition(async () => {
       try {
         const result = await onConfirm();
-        if (result && result.ok === false) {
+        if (result && "queued" in result && result.queued) {
+          toast.success("Queued. Will sync when you’re back online.");
+          setOpen(false);
+          return;
+        }
+        if (result && "ok" in result && result.ok === false) {
           toast.error(result.error);
           return;
+        }
+        if (result && "ok" in result && result.ok && "whatsappUrl" in result && result.whatsappUrl) {
+          window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
         }
         if (successMessage) toast.success(successMessage);
         setOpen(false);

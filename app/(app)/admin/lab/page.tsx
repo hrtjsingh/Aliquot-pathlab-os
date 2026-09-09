@@ -25,7 +25,7 @@ export default async function LabConfigPage() {
         description="Set letterhead, accreditation, and the printed PDF layout used when a report is released."
         hint={
           <InstructionAlert title="How PDF output is built">
-            Letterhead and contact details print on every released report. Toggle columns and footer copy, then save. Download a sample PDF to check the printed page against the live preview.
+            Letterhead, QR code, and contact details print on every released report. Patients scan the QR to view or download without signing in. Save, then download a sample PDF to check the printed page.
           </InstructionAlert>
         }
       />

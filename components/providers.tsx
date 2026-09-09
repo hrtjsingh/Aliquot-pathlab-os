@@ -1,16 +1,28 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { PwaProvider } from "@/components/pwa-provider";
+import type { Theme } from "@/lib/theme";
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({
+  children,
+  theme,
+  resolvedTheme,
+}: {
+  children: ReactNode;
+  theme: Theme;
+  resolvedTheme: "light" | "dark";
+}) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider theme={theme} resolvedTheme={resolvedTheme}>
       <TooltipProvider delayDuration={200}>
-        {children}
-        <Toaster />
+        <PwaProvider>
+          {children}
+          <Toaster />
+        </PwaProvider>
       </TooltipProvider>
     </ThemeProvider>
   );

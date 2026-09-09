@@ -5,6 +5,8 @@ import { Role } from "@prisma/client";
 import { LabReportDocument, type ReportData } from "@/lib/report-pdf";
 import { parseReportLayout, SAMPLE_REPORT_RESULTS, type ReportLayout } from "@/lib/report-layout";
 import { getLabConfig } from "@/app/actions/lab";
+import { qrPngDataUrl } from "@/lib/qr";
+import { reportOriginFromRequest } from "@/lib/public-report";
 
 function sampleData(branch: {
   name: string;
@@ -28,7 +30,10 @@ function sampleData(branch: {
   };
 }
 
-async function pdfResponse(data: ReportData, layout: ReportLayout) {
+async function pdfResponse(request: Request, data: ReportData, layout: ReportLayout) {
+  if (layout.showQrCode) {
+    data.qrCodeDataUrl = await qrPngDataUrl(`${reportOriginFromRequest(request)}/r/preview-sample`);
+  }
   const buffer = await renderToBuffer(<LabReportDocument data={data} layout={layout} />);
   return new NextResponse(buffer as unknown as BodyInit, {
     headers: {
@@ -38,10 +43,11 @@ async function pdfResponse(data: ReportData, layout: ReportLayout) {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   await requireRole(Role.ADMIN);
   const config = await getLabConfig();
   return pdfResponse(
+    request,
     sampleData({
       name: config.branch.name,
       address: config.branch.address || null,
@@ -67,6 +73,7 @@ export async function POST(request: Request) {
   };
 
   return pdfResponse(
+    request,
     sampleData({
       name: body.branch?.name?.trim() || "Laboratory",
       address: body.branch?.address?.trim() || null,

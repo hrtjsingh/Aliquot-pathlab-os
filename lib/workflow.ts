@@ -4,7 +4,7 @@ import { OrderStatus } from "@prisma/client";
  * Order workflow state machine, exactly per spec:
  * Order Created -> Sample Collected -> Sample Received -> Result Entry
  *   -> Technologist Verification -> Pathologist Authorization -> Released
- *   -> Reprint / Amend (audit-preserving branch)
+ *   -> Sent to customer / collected -> Reprint / Amend (audit-preserving branch)
  *
  * ALLOWED_TRANSITIONS is the single source of truth — every status change in
  * the app must go through canTransition() so an out-of-order transition
@@ -18,7 +18,8 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   RESULT_ENTRY: [OrderStatus.TECH_VERIFIED, OrderStatus.CANCELLED],
   TECH_VERIFIED: [OrderStatus.AUTHORIZED, OrderStatus.RESULT_ENTRY], // pathologist can bounce back for re-entry
   AUTHORIZED: [OrderStatus.RELEASED],
-  RELEASED: [OrderStatus.AMENDED],
+  RELEASED: [OrderStatus.SENT_TO_CUSTOMER, OrderStatus.AMENDED],
+  SENT_TO_CUSTOMER: [OrderStatus.AMENDED],
   AMENDED: [], // amendments create a NEW linked Order (see schema: amendsOrderId) — original stays immutable
   CANCELLED: [],
 };
@@ -35,9 +36,26 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   TECH_VERIFIED: "Technologist Verified",
   AUTHORIZED: "Pathologist Authorized",
   RELEASED: "Released",
+  SENT_TO_CUSTOMER: "Sent / collected",
   AMENDED: "Amended",
   CANCELLED: "Cancelled",
 };
+
+export const WORKLIST_STATUSES: OrderStatus[] = [
+  OrderStatus.ORDER_CREATED,
+  OrderStatus.SAMPLE_COLLECTED,
+  OrderStatus.SAMPLE_RECEIVED,
+  OrderStatus.RESULT_ENTRY,
+  OrderStatus.TECH_VERIFIED,
+  OrderStatus.AUTHORIZED,
+  OrderStatus.RELEASED,
+];
+
+export const CUSTOMER_REPORT_STATUSES: OrderStatus[] = [OrderStatus.RELEASED, OrderStatus.SENT_TO_CUSTOMER];
+
+export function isCustomerVisibleReport(status: OrderStatus) {
+  return CUSTOMER_REPORT_STATUSES.includes(status);
+}
 
 // Which role is permitted to *perform* each transition.
 export const TRANSITION_ROLE: Record<string, string[]> = {
@@ -47,5 +65,6 @@ export const TRANSITION_ROLE: Record<string, string[]> = {
   TECH_VERIFIED: ["TECHNOLOGIST", "ADMIN"],
   AUTHORIZED: ["PATHOLOGIST", "ADMIN"],
   RELEASED: ["PATHOLOGIST", "ADMIN", "FRONTDESK"],
+  SENT_TO_CUSTOMER: ["FRONTDESK", "ADMIN", "PATHOLOGIST", "TECHNOLOGIST"],
   CANCELLED: ["ADMIN", "FRONTDESK"],
 };
