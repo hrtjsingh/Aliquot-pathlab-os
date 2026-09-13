@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCloudPrisma } from "@/lib/prisma-cloud";
 import {
   leaseAllowsWrites,
+  normalizePem,
   type LeasePayload,
   verifySignedLease,
 } from "@/lib/license-crypto";
@@ -18,11 +19,53 @@ export type LicenseStatus = {
   message: string;
 };
 
-function loadPublicKeyPem() {
+let cachedPublicKey: string | null | undefined;
+
+function loadPublicKeyFromDisk() {
   const fromEnv = process.env.LICENSE_PUBLIC_KEY?.trim();
-  if (fromEnv) return fromEnv;
+  if (fromEnv) return normalizePem(fromEnv);
   const file = path.join(process.cwd(), ".license-public.pem");
-  if (existsSync(file)) return readFileSync(file, "utf8");
+  if (existsSync(file)) return normalizePem(readFileSync(file, "utf8"));
+  return null;
+}
+
+async function loadPublicKeyFromDb(client: typeof prisma | NonNullable<ReturnType<typeof getCloudPrisma>>) {
+  try {
+    const row = await (client as {
+      licenseAuthority?: { findUnique: (args: { where: { id: string } }) => Promise<{ publicKeyPem: string } | null> };
+    }).licenseAuthority?.findUnique({ where: { id: "hq" } });
+    return row?.publicKeyPem ? normalizePem(row.publicKeyPem) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Env / file first; then Neon (or local) LicenseAuthority published by HQ. */
+export async function resolvePublicKeyPem() {
+  if (cachedPublicKey !== undefined) return cachedPublicKey;
+
+  const fromDisk = loadPublicKeyFromDisk();
+  if (fromDisk) {
+    cachedPublicKey = fromDisk;
+    return fromDisk;
+  }
+
+  const fromLocal = await loadPublicKeyFromDb(prisma);
+  if (fromLocal) {
+    cachedPublicKey = fromLocal;
+    return fromLocal;
+  }
+
+  const cloud = getCloudPrisma();
+  if (cloud) {
+    const fromCloud = await loadPublicKeyFromDb(cloud);
+    if (fromCloud) {
+      cachedPublicKey = fromCloud;
+      return fromCloud;
+    }
+  }
+
+  cachedPublicKey = null;
   return null;
 }
 
@@ -90,7 +133,7 @@ async function persistLease(vendorId: string, signedLease: string, payload: Leas
 }
 
 export async function cacheSignedLease(vendorId: string, signedLease: string) {
-  const publicKey = loadPublicKeyPem();
+  const publicKey = await resolvePublicKeyPem();
   if (!publicKey) return null;
   const vendor = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true, slug: true } });
   if (!vendor) return null;
@@ -101,21 +144,30 @@ export async function cacheSignedLease(vendorId: string, signedLease: string) {
 }
 
 async function refreshFromCloud(vendor: { id: string; slug: string }, timeoutMs: number) {
-  const cloud = getCloudPrisma();
-  if (!cloud) return { reachable: false as const, signedLease: null as string | null };
+  // Prefer CLOUD_DATABASE_URL; on Vercel the app DB is usually Neon itself.
+  const client = getCloudPrisma() ?? (process.env.VERCEL ? prisma : null);
+  if (!client) return { reachable: false as const, signedLease: null as string | null };
+  return refreshLeaseFromClient(client, vendor, timeoutMs);
+}
+
+async function refreshLeaseFromClient(
+  client: typeof prisma,
+  vendor: { id: string; slug: string },
+  timeoutMs: number
+) {
   try {
     const timedOut = Symbol("timeout");
     const sub = await Promise.race([
-      cloud.subscription.findFirst({
+      client.subscription.findFirst({
         where: { OR: [{ vendorId: vendor.id }, { vendor: { slug: vendor.slug } }] },
         select: { signedLease: true },
       }),
       new Promise<typeof timedOut>((resolve) => setTimeout(() => resolve(timedOut), timeoutMs)),
     ]);
-    if (sub === timedOut) return { reachable: false as const, signedLease: null };
+    if (sub === timedOut) return { reachable: false as const, signedLease: null as string | null };
     return { reachable: true as const, signedLease: sub?.signedLease || null };
   } catch {
-    return { reachable: false as const, signedLease: null };
+    return { reachable: false as const, signedLease: null as string | null };
   }
 }
 
@@ -133,11 +185,11 @@ export async function getLicenseStatus(
   const vendor = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { id: true, slug: true } });
   if (!vendor) return denied({ message: "Lab was not found." });
 
-  const publicKey = loadPublicKeyPem();
+  const publicKey = await resolvePublicKeyPem();
   const cloud =
     options.refreshMs && options.refreshMs > 0
       ? await refreshFromCloud(vendor, options.refreshMs)
-      : { reachable: false as const, signedLease: null };
+      : { reachable: false as const, signedLease: null as string | null };
 
   if (cloud.reachable && cloud.signedLease && publicKey) {
     const payload = verifySignedLease(cloud.signedLease, publicKey);
@@ -191,4 +243,3 @@ export async function getLicenseStatus(
     message: "HQ license public key is not installed; subscription is not enforced on this lab server.",
   };
 }
-

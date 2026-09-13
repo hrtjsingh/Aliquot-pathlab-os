@@ -27,6 +27,7 @@ import { BrandLockup, BrandMark } from "@/components/brand-mark";
 import { NavPendingProvider } from "@/components/page-loader";
 import { NavigationLink } from "@/components/navigation-link";
 import { DataSyncProvider, SyncControl } from "@/components/data-sync";
+import { useIsInstalledPwa } from "@/lib/client-pwa";
 import { SubscriptionBanner, type LicenseBannerData } from "@/components/subscription-banner";
 import type { LabSnapshot } from "@/app/actions/offline";
 import { ROLE_LABELS } from "@/components/status-badge";
@@ -63,6 +64,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isPwa = useIsInstalledPwa();
 
   const navItems = NAV.filter((item) => !item.roles || item.roles.includes(user.role));
 
@@ -151,7 +153,7 @@ export function AppShell({
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <SyncControl />
+        {isPwa ? <SyncControl /> : null}
         <div className="flex items-center justify-between gap-1">
           <ThemeToggle />
           <form action={signOutAction} className="flex-1">
@@ -216,10 +218,12 @@ export function AppShell({
 
                 <DropdownMenuSeparator className="my-2" />
 
-                <div className="flex items-center justify-between px-2.5 py-1.5 rounded-md hover:bg-secondary/50">
-                  <span className="text-xs font-semibold text-foreground">Data Sync</span>
-                  <SyncControl compact={false} />
-                </div>
+                {isPwa ? (
+                  <div className="flex items-center justify-between px-2.5 py-1.5 rounded-md hover:bg-secondary/50">
+                    <span className="text-xs font-semibold text-foreground">Data Sync</span>
+                    <SyncControl compact={false} />
+                  </div>
+                ) : null}
 
                 <div className="flex items-center justify-between px-2.5 py-1.5 rounded-md hover:bg-secondary/50">
                   <span className="text-xs font-semibold text-foreground">Appearance</span>
@@ -254,7 +258,7 @@ export function AppShell({
             </NavigationLink>
           </div>
           <div className="flex items-center gap-1">
-            <SyncControl compact />
+            {isPwa ? <SyncControl compact /> : null}
           </div>
         </div>
       </header>

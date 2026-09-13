@@ -9,7 +9,7 @@ export function SubscriptionBanner({ license }: { license: LicenseBannerData | n
   if (license.source === "unsigned-dev") {
     return (
       <div className="border-b border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning">
-        Subscription is not enforced yet. Start Aliquot HQ once so this lab can verify a signed lease.
+        Subscription is not enforced yet. On Vercel, run Aliquot HQ once against Neon (Cloud) so the license public key and signed lease are published — or set LICENSE_PUBLIC_KEY.
       </div>
     );
   }

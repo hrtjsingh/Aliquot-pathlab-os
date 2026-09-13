@@ -37,6 +37,12 @@ export async function ensureHqSeed() {
     create: { email: HQ_EMAIL, name: "Aliquot HQ", passwordHash },
   });
 
+  await hqPrisma.licenseAuthority.upsert({
+    where: { id: "hq" },
+    update: { publicKeyPem: keys.publicKeyPem },
+    create: { id: "hq", publicKeyPem: keys.publicKeyPem },
+  });
+
   const trial = await hqPrisma.plan.findUniqueOrThrow({ where: { code: "TRIAL" } });
   const year = await hqPrisma.plan.findUniqueOrThrow({ where: { code: "Y1" } });
   const legacySubs = await hqPrisma.subscription.findMany({
@@ -64,30 +70,34 @@ export async function ensureHqSeed() {
     });
   }
 
+  // Re-sign every lab subscription so Neon hosts (Vercel) can verify without a local pem file.
+  const allSubs = await hqPrisma.subscription.findMany({ include: { plan: true, vendor: true } });
+  for (const sub of allSubs) {
+    await hqPrisma.subscription.update({
+      where: { id: sub.id },
+      data: {
+        signedLease: signLease(
+          buildLeasePayload({
+            vendorId: sub.vendorId,
+            vendorSlug: sub.vendor.slug,
+            status: sub.status,
+            seats: sub.seats,
+            planCode: sub.plan.code,
+            expiresAt: sub.expiresAt,
+          }),
+          keys.privateKeyPem
+        ),
+      },
+    });
+  }
+
   const vendor = await hqPrisma.vendor.findUnique({ where: { slug: "aliquot" } });
   if (vendor) {
     const existing = await hqPrisma.subscription.findUnique({
       where: { vendorId: vendor.id },
       include: { plan: true },
     });
-    if (existing) {
-      await hqPrisma.subscription.update({
-        where: { id: existing.id },
-        data: {
-          signedLease: signLease(
-            buildLeasePayload({
-              vendorId: vendor.id,
-              vendorSlug: vendor.slug,
-              status: existing.status,
-              seats: existing.seats,
-              planCode: existing.plan.code,
-              expiresAt: existing.expiresAt,
-            }),
-            keys.privateKeyPem
-          ),
-        },
-      });
-    } else {
+    if (!existing) {
       const expiresAt = planExpiresAt(trial);
       await hqPrisma.subscription.create({
         data: {

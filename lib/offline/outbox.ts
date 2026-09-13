@@ -1,4 +1,5 @@
 import { openDb, STORE, txDone } from "@/lib/offline/db";
+import { isInstalledPwa } from "@/lib/client-pwa";
 
 export type OutboxOp =
   | { type: "createPatient"; entries: [string, string][]; localId: string }
@@ -47,8 +48,6 @@ export type OutboxItem = {
   createdAt: number;
   op: OutboxOp;
 };
-
-import { isInstalledPwa } from "@/lib/client-pwa";
 
 export function isBrowserOffline() {
   // Offline queue is PWA/desktop only — live web stays online-only.
