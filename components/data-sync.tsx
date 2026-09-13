@@ -208,9 +208,29 @@ export function DataSyncProvider({
 
   useEffect(() => {
     let cancelled = false;
+    const pwa = isInstalledPwa();
 
     async function hydrate() {
       try {
+        // Live web: always fetch from the server. IndexedDB cache is PWA/offline only.
+        if (!pwa) {
+          let lastError: unknown;
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              const next = await requestLabSnapshot("cache");
+              if (cancelled) return;
+              applySnapshot(next);
+              return;
+            } catch (error) {
+              lastError = error;
+              await sleep(400 * (attempt + 1));
+              if (cancelled) return;
+            }
+          }
+          if (lastError) throw lastError;
+          return;
+        }
+
         if (snapshotRef.current) {
           try {
             await writeSnapshot(snapshotRef.current);
@@ -246,7 +266,7 @@ export function DataSyncProvider({
         }
         if (lastError) throw lastError;
       } catch {
-        /* CacheMiss offers a retry. */
+        /* CacheMiss offers a retry (PWA) or live error state. */
       } finally {
         if (!cancelled) setReady(true);
       }
@@ -255,11 +275,16 @@ export function DataSyncProvider({
     void hydrate();
 
     function refreshQueue() {
+      if (!isInstalledPwa()) {
+        setQueued(0);
+        return;
+      }
       void listOutbox()
         .then((items) => setQueued(items.length))
         .catch(() => setQueued(0));
     }
     function onCache() {
+      if (!isInstalledPwa()) return;
       void readSnapshot().then((next) => {
         if (!cancelled && next) applySnapshot(next);
       });
@@ -275,11 +300,14 @@ export function DataSyncProvider({
   }, [applySnapshot, persistSnapshot]);
 
   const patchSnapshot = useCallback(async (updater: (current: LabSnapshot) => LabSnapshot) => {
-    const current = snapshotRef.current ?? (await readSnapshot().catch(() => null));
+    const current =
+      snapshotRef.current ??
+      (isInstalledPwa() ? await readSnapshot().catch(() => null) : null);
     if (!current) return;
     const next = updater(current);
-    await persistSnapshot(next);
-  }, [persistSnapshot]);
+    if (isInstalledPwa()) await persistSnapshot(next);
+    else applySnapshot(next);
+  }, [applySnapshot, persistSnapshot]);
 
   const syncNow = useCallback(async (options?: { auto?: boolean }) => {
     if (syncingRef.current) return;
@@ -360,24 +388,71 @@ export function useDataSync() {
 }
 
 export function CacheMiss({ loading }: { loading: ReactNode }) {
+  const isPwa = useIsInstalledPwa();
   const { snapshot, ready, syncing, loadCache } = useDataSync();
   const [loadingCache, setLoadingCache] = useState(false);
+  const [error, setError] = useState("");
+  const autoTried = useRef(false);
+
+  // Live web: never show the offline "cache" empty state — auto-load from server.
+  useEffect(() => {
+    if (snapshot || isPwa || !ready || syncing || autoTried.current) return;
+    autoTried.current = true;
+    setLoadingCache(true);
+    setError("");
+    void loadCache()
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Could not load lab data.");
+      })
+      .finally(() => setLoadingCache(false));
+  }, [snapshot, isPwa, ready, syncing, loadCache]);
 
   if (snapshot) return null;
-  if (!ready || syncing || loadingCache) return <>{loading}</>;
+  if (!ready || syncing || loadingCache || !isPwa) {
+    if (!isPwa && error) {
+      return (
+        <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
+          <EmptyState
+            title="Could not load lab data"
+            description={error}
+            action={
+              <Button
+                type="button"
+                onClick={() => {
+                  autoTried.current = false;
+                  setLoadingCache(true);
+                  setError("");
+                  void loadCache()
+                    .catch((err) => {
+                      setError(err instanceof Error ? err.message : "Could not load lab data.");
+                    })
+                    .finally(() => setLoadingCache(false));
+                }}
+              >
+                <RefreshCw />
+                Retry
+              </Button>
+            }
+          />
+        </div>
+      );
+    }
+    return <>{loading}</>;
+  }
+
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <EmptyState
         title="Lab data isn’t cached yet"
-        description="Load patients, the worklist, and dashboard counts from this lab computer. Pages then stay cached until you sync again."
+        description="Load patients, the worklist, and dashboard counts on this device. Pages then stay available offline until you sync again."
         action={
           <Button
             type="button"
             onClick={() => {
               setLoadingCache(true);
               void loadCache()
-                .catch((error) => {
-                  toast.error(error instanceof Error ? error.message : "Could not load lab data.");
+                .catch((err) => {
+                  toast.error(err instanceof Error ? err.message : "Could not load lab data.");
                 })
                 .finally(() => setLoadingCache(false));
             }}
