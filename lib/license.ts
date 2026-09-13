@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCloudPrisma } from "@/lib/prisma-cloud";
 import {
@@ -29,11 +30,12 @@ function loadPublicKeyFromDisk() {
   return null;
 }
 
-async function loadPublicKeyFromDb(client: typeof prisma | NonNullable<ReturnType<typeof getCloudPrisma>>) {
+async function loadPublicKeyFromDb(client: PrismaClient) {
   try {
-    const row = await (client as {
-      licenseAuthority?: { findUnique: (args: { where: { id: string } }) => Promise<{ publicKeyPem: string } | null> };
-    }).licenseAuthority?.findUnique({ where: { id: "hq" } });
+    const row = await client.licenseAuthority.findUnique({
+      where: { id: "hq" },
+      select: { publicKeyPem: true },
+    });
     return row?.publicKeyPem ? normalizePem(row.publicKeyPem) : null;
   } catch {
     return null;
