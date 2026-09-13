@@ -127,6 +127,38 @@ export function TestProfileDialog({
                 <input type="hidden" name="testId" value={test.id} />
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`name-${test.id}`}>Name</Label>
+                    <Input id={`name-${test.id}`} name="name" defaultValue={test.name} />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`category-${test.id}`}>Category</Label>
+                    <NativeSelect id={`category-${test.id}`} name="category" defaultValue={test.category}>
+                      <option value="HEMATOLOGY">Hematology</option>
+                      <option value="CLINICAL_CHEMISTRY">Clinical Chemistry</option>
+                      <option value="MICROBIOLOGY">Microbiology</option>
+                      <option value="SEROLOGY_IMMUNOLOGY">Serology/Immunology</option>
+                      <option value="COAGULATION">Coagulation</option>
+                      <option value="URINALYSIS">Urinalysis</option>
+                      <option value="HISTOPATHOLOGY">Histopathology</option>
+                      <option value="CYTOLOGY">Cytology</option>
+                      <option value="MOLECULAR">Molecular</option>
+                      <option value="ENDOCRINE">Endocrine</option>
+                      <option value="OTHER">Other</option>
+                    </NativeSelect>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`price-${test.id}`}>Charge (₹)</Label>
+                    <Input id={`price-${test.id}`} name="price" numeric="decimal" defaultValue={test.price} />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor={`formula-${test.id}`}>Formula</Label>
+                    <Input id={`formula-${test.id}`} name="formula" defaultValue={test.formula ?? ""} placeholder="[Creatinine] or EGFR" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
                     <Label htmlFor={`shortName-${test.id}`}>Short name</Label>
                     <Input id={`shortName-${test.id}`} name="shortName" defaultValue={test.shortName ?? ""} />
                   </div>
@@ -155,8 +187,7 @@ export function TestProfileDialog({
                     <Input
                       id={`tat-${test.id}`}
                       name="turnaroundHours"
-                      type="number"
-                      min={0}
+                      numeric="int"
                       defaultValue={test.turnaroundHours ?? ""}
                     />
                   </div>
@@ -193,6 +224,10 @@ export function TestProfileDialog({
               </form>
             ) : (
               <div className="grid grid-cols-2 gap-4">
+                <Field label="Name" value={test.name} />
+                <Field label="Category" value={test.category.replaceAll("_", " ")} />
+                <Field label="Charge" value={`₹${test.price}`} />
+                <Field label="Formula" value={test.formula} />
                 <Field label="Specimen" value={test.specimenType} />
                 <Field label="Unit" value={test.unit} />
                 <Field label="Method" value={resolved.method} />
@@ -245,11 +280,11 @@ export function TestProfileDialog({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label>Low</Label>
-                  <Input name="low" type="number" step="any" />
+                  <Input name="low" numeric="decimal" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label>High</Label>
-                  <Input name="high" type="number" step="any" />
+                  <Input name="high" numeric="decimal" />
                 </div>
                 <div className="col-span-2">
                   <Button type="submit" size="sm" disabled={pending}>
@@ -279,11 +314,11 @@ export function TestProfileDialog({
                 <div className="col-span-2 text-xs font-medium">Add panic threshold</div>
                 <div className="flex flex-col gap-1.5">
                   <Label>Panic low</Label>
-                  <Input name="low" type="number" step="any" />
+                  <Input name="low" numeric="decimal" />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label>Panic high</Label>
-                  <Input name="high" type="number" step="any" />
+                  <Input name="high" numeric="decimal" />
                 </div>
                 <div className="col-span-2">
                   <Button type="submit" size="sm" variant="destructive" disabled={pending}>

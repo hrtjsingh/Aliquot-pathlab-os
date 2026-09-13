@@ -32,6 +32,8 @@ export function toReportData(order: {
     ageMonths: number | null;
     gender: string;
     mrn: string;
+    phone?: string | null;
+    address?: string | null;
   };
   authorizedBy: { name: string; registrationNo: string | null } | null;
   results: Array<{
@@ -62,6 +64,8 @@ export function toReportData(order: {
       age: calcAge(order.patient.dob, order.patient.ageYears, order.patient.ageMonths),
       gender: order.patient.gender,
       mrn: order.patient.mrn,
+      phone: order.patient.phone ?? null,
+      address: order.patient.address ?? null,
     },
     accessionNo: order.accessionNo,
     referringDoctor: order.referringDoctor,

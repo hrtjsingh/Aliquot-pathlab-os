@@ -1,64 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { requireTenant } from "@/lib/rbac";
-import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { InstructionAlert } from "@/components/instruction-alert";
 import { AddTestDialog } from "./add-test-dialog";
-import { ToggleTestButton } from "./toggle-test-button";
-import { TestProfileDialog } from "./test-profile-dialog";
+import { TestsCatalog } from "./tests-catalog.client";
 import type { TestProfile } from "@/lib/test-profile";
-import { FlaskConical } from "lucide-react";
-
-function toProfile(t: {
-  id: string;
-  code: string;
-  name: string;
-  shortName: string | null;
-  category: string;
-  specimenType: string;
-  method: string | null;
-  loincCode: string | null;
-  unit: string | null;
-  turnaroundHours: number | null;
-  description: string | null;
-  collectionNotes: string | null;
-  dataType: string;
-  isDerived: boolean;
-  autoVerifyEligible: boolean;
-  referenceRanges: TestProfile["referenceRanges"];
-  criticalThresholds: TestProfile["criticalThresholds"];
-  panelTests: Array<{ panel: { code: string; name: string } }>;
-}): TestProfile {
-  return {
-    id: t.id,
-    code: t.code,
-    name: t.name,
-    shortName: t.shortName,
-    category: t.category,
-    specimenType: t.specimenType,
-    method: t.method,
-    loincCode: t.loincCode,
-    unit: t.unit,
-    turnaroundHours: t.turnaroundHours,
-    description: t.description,
-    collectionNotes: t.collectionNotes,
-    dataType: t.dataType,
-    isDerived: t.isDerived,
-    autoVerifyEligible: t.autoVerifyEligible,
-    referenceRanges: t.referenceRanges,
-    criticalThresholds: t.criticalThresholds,
-    panels: t.panelTests.map((pt) => ({ code: pt.panel.code, name: pt.panel.name })),
-  };
-}
+import { derivationRuleToFormula } from "@/lib/test-deps";
+import { asMoney } from "@/lib/money";
 
 export default async function TestMasterPage() {
   const user = await requireTenant();
-  const role = user.role;
 
-  if (role !== "ADMIN") {
+  if (user.role !== "ADMIN") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6">
         <PageHeader title="Test master" description="Only administrators can manage the laboratory test catalog." />
@@ -76,75 +29,59 @@ export default async function TestMasterPage() {
     },
   });
 
+  const siblings = tests.map((test) => ({ name: test.name, code: test.code }));
+  const catalog = tests.map((test) => {
+    const profile: TestProfile = {
+      id: test.id,
+      code: test.code,
+      name: test.name,
+      shortName: test.shortName,
+      category: test.category,
+      specimenType: test.specimenType,
+      method: test.method,
+      loincCode: test.loincCode,
+      unit: test.unit,
+      turnaroundHours: test.turnaroundHours,
+      description: test.description,
+      collectionNotes: test.collectionNotes,
+      dataType: test.dataType,
+      isDerived: test.isDerived,
+      autoVerifyEligible: test.autoVerifyEligible,
+      price: asMoney(test.price),
+      formula: derivationRuleToFormula(test.derivationRule, siblings),
+      referenceRanges: test.referenceRanges.map((range) => ({
+        id: range.id,
+        gender: range.gender,
+        ageMinDays: range.ageMinDays,
+        ageMaxDays: range.ageMaxDays,
+        low: range.low,
+        high: range.high,
+        isDefault: range.isDefault,
+      })),
+      criticalThresholds: test.criticalThresholds.map((row) => ({
+        id: row.id,
+        low: row.low,
+        high: row.high,
+        gender: row.gender,
+      })),
+      panels: test.panelTests.map((pt) => ({ code: pt.panel.code, name: pt.panel.name })),
+    };
+    return { ...profile, active: test.active };
+  });
+
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
       <PageHeader
         title="Test master"
-        description="Each test has a laboratory profile: specimen, method, reference ranges, and panic values."
+        description="Search the catalog, set charges and formulas, and remove unused tests."
         actions={<AddTestDialog />}
         hint={
           <InstructionAlert title="Test profiles">
-            Open Profile on a row to see how the test is collected, which panels include it, and which ranges apply. Edits change the catalog, not historical results.
+            Open Profile to edit name, category, charge, and formula. Delete removes unused tests; tests already on orders are deactivated instead.
           </InstructionAlert>
         }
       />
-
-      <Card>
-        <CardContent className="p-0">
-          {tests.length === 0 ? (
-            <EmptyState
-              icon={<FlaskConical className="size-5" />}
-              title="No tests in the catalog"
-              description="Add the first orderable test to start building panels and accessions."
-              action={<AddTestDialog />}
-            />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Specimen</TableHead>
-                  <TableHead>Panels</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tests.map((t) => {
-                  const profile = toProfile(t);
-                  return (
-                    <TableRow key={t.id}>
-                      <TableCell className="tabular text-xs">{t.code}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-0.5">
-                          <span>
-                            {t.name} {t.isDerived ? <span className="text-xs text-muted-foreground">(calc.)</span> : null}
-                          </span>
-                          <span className="text-xs text-muted-foreground">{t.category.replaceAll("_", " ")}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs">{t.specimenType}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {profile.panels.length > 0 ? profile.panels.map((p) => p.code).join(", ") : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={t.active ? "success" : "outline"}>{t.active ? "Active" : "Inactive"}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end gap-2">
-                          <TestProfileDialog test={profile} canEdit />
-                          <ToggleTestButton testId={t.id} active={t.active} name={t.name} />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      <TestsCatalog tests={catalog} />
     </div>
   );
 }

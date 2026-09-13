@@ -27,7 +27,11 @@ export function AddTestDialog() {
   function submit(formData: FormData) {
     startTransition(async () => {
       try {
-        await createTest(formData);
+        const result = await createTest(formData);
+        if (result && "ok" in result && result.ok === false) {
+          toast.error(result.error);
+          return;
+        }
         toast.success("Test added to the catalog.");
         setOpen(false);
         router.refresh();
@@ -104,7 +108,7 @@ export function AddTestDialog() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="turnaroundHours">Turnaround (hours)</Label>
-              <Input id="turnaroundHours" name="turnaroundHours" type="number" min={0} placeholder="6" />
+              <Input id="turnaroundHours" name="turnaroundHours" numeric="int" placeholder="6" />
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -117,12 +121,22 @@ export function AddTestDialog() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
+              <Label htmlFor="price">Charge (₹)</Label>
+              <Input id="price" name="price" numeric="decimal" defaultValue="0" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="formula">Formula</Label>
+              <Input id="formula" name="formula" placeholder="[Hemoglobin] * 3 or EGFR" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="low">Default range low</Label>
-              <Input id="low" name="low" type="number" step="any" />
+              <Input id="low" name="low" numeric="decimal" />
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="high">Default range high</Label>
-              <Input id="high" name="high" type="number" step="any" />
+              <Input id="high" name="high" numeric="decimal" />
             </div>
           </div>
           <DialogFooter>

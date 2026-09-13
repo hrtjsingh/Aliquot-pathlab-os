@@ -8,8 +8,12 @@ import { PriorityBadge, StatusBadge } from "@/components/status-badge";
 import { WorkflowStepper } from "@/components/workflow-stepper";
 import { ResultTable } from "./result-table.client";
 import { OrderActions } from "./order-actions.client";
+import { BillingCard } from "./billing-card.client";
+import { OrderItemsEditor } from "./order-items-editor.client";
 import { CriticalCallDialog } from "./critical-call-dialog";
 import { ageInDays, formatRangeText, resolveReferenceRange } from "@/lib/reference-range";
+import { asMoney } from "@/lib/money";
+import { derivationRuleToFormula } from "@/lib/test-deps";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText, QrCode } from "lucide-react";
@@ -59,7 +63,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       isDerived: ot.test.isDerived,
       numericValue: r?.numericValue ?? null,
       textValue: r?.textValue ?? null,
-      referenceRangeText: catalogRange,
+      referenceRangeText: r?.referenceRangeText || catalogRange,
       flag: r?.flag ?? "NORMAL",
       deltaFlag: r?.deltaFlag ?? false,
       status: r?.status ?? null,
@@ -79,8 +83,23 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         dataType: ot.test.dataType,
         isDerived: ot.test.isDerived,
         autoVerifyEligible: ot.test.autoVerifyEligible,
-        referenceRanges: ot.test.referenceRanges,
-        criticalThresholds: ot.test.criticalThresholds,
+        price: asMoney(ot.test.price),
+        formula: derivationRuleToFormula(ot.test.derivationRule, order.orderTests.map((row) => ({ name: row.test.name, code: row.test.code }))),
+        referenceRanges: ot.test.referenceRanges.map((range) => ({
+          id: range.id,
+          gender: range.gender,
+          ageMinDays: range.ageMinDays,
+          ageMaxDays: range.ageMaxDays,
+          low: range.low,
+          high: range.high,
+          isDefault: range.isDefault,
+        })),
+        criticalThresholds: ot.test.criticalThresholds.map((row) => ({
+          id: row.id,
+          low: row.low,
+          high: row.high,
+          gender: row.gender,
+        })),
         panels: ot.test.panelTests.map((pt) => ({ code: pt.panel.code, name: pt.panel.name })),
       },
     };
@@ -89,6 +108,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const hasOpenCritical = rows.some((r) => r.flag === "CRITICAL_LOW" || r.flag === "CRITICAL_HIGH");
   const criticalLogged = order.criticalCalls.length > 0;
   const editable = order.status === "RESULT_ENTRY" || order.status === "SAMPLE_RECEIVED";
+  const itemsEditable = ["ORDER_CREATED", "SAMPLE_COLLECTED", "SAMPLE_RECEIVED", "RESULT_ENTRY"].includes(order.status);
+  const totalCharge = asMoney(order.totalCharge);
+  const discount = asMoney(order.discount);
+  const amountPaid = asMoney(order.amountPaid);
   const patientReportHref = isCustomerVisibleReport(order.status)
     ? publicReportPath(order.publicToken ?? (await ensurePublicReportToken(order.id)))
     : null;
@@ -140,6 +163,28 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           phone={order.patient.phone}
         />
       </div>
+
+      <BillingCard
+        orderId={id}
+        accessionNo={order.accessionNo}
+        status={order.status}
+        role={role}
+        totalCharge={totalCharge}
+        discount={discount}
+        amountPaid={amountPaid}
+      />
+
+      {itemsEditable ? (
+        <OrderItemsEditor
+          orderId={id}
+          patientId={order.patientId}
+          referringDoctor={order.referringDoctor ?? "Dr. SELF"}
+          discount={discount}
+          amountPaid={amountPaid}
+          testIds={order.orderTests.map((row) => row.testId)}
+          panelIds={order.orderPanels.map((row) => row.panelId)}
+        />
+      ) : null}
 
       <Card>
         <CardHeader>

@@ -11,6 +11,7 @@
     "postinstall": "prisma generate",
     "db:up": "bash scripts/local-pg-up.sh",
     "db:down": "/usr/lib/postgresql/16/bin/pg_ctl -D .local-pg stop",
+    "db:autostart": "bash scripts/install-local-pg-autostart.sh",
     "db:migrate": "prisma migrate dev",
     "db:migrate:cloud": "bash scripts/migrate-cloud.sh",
     "db:seed": "tsx prisma/seed.ts",

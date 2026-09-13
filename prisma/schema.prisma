@@ -409,6 +409,9 @@ model Order {
   referringDoctor String?
   priority        OrderPriority @default(ROUTINE)
   status          OrderStatus   @default(ORDER_CREATED)
+  totalCharge     Decimal  @default(0) @db.Decimal(10, 2)
+  discount        Decimal  @default(0) @db.Decimal(10, 2)
+  amountPaid      Decimal  @default(0) @db.Decimal(10, 2)
 
   collectedAt     DateTime?
   receivedAt      DateTime?

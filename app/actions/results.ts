@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { assertWritableLab, requireRole, requireTenant, requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { resolveReferenceRange, formatRangeText, ageInDays } from "@/lib/reference-range";
-import { computeFlag, computeDelta, isAutoVerifyEligible, requiresCriticalCallback } from "@/lib/flagging";
+import { computeFlag, computeDelta, isAutoVerifyEligible, requiresCriticalCallback, parseRangeBounds } from "@/lib/flagging";
 import { runCalcRule } from "@/lib/calc-engine";
 import { generateInterpretiveComments } from "@/lib/interpretive-comments";
 import { OrderStatus, ResultStatus, Role } from "@prisma/client";
@@ -53,6 +53,7 @@ export async function saveManualResult(params: {
   organismPanel?: unknown;
   qualitativeResult?: string;
   ctValue?: number;
+  referenceRangeText?: string | null;
 }) {
   const user = await requireWritableLab();
   const test = await prisma.test.findFirst({
@@ -63,11 +64,30 @@ export async function saveManualResult(params: {
   const { order, rangeCtx } = await patientRangeCtx(params.orderId, user.vendorId);
 
   const range = resolveReferenceRange(test.referenceRanges, rangeCtx);
+  const overrideText = params.referenceRangeText?.trim();
+  const effectiveRange = overrideText
+    ? {
+        ...(range ?? {
+          id: "override",
+          testId: test.id,
+          gender: null,
+          ageMinDays: 0,
+          ageMaxDays: 43800,
+          pregnancyOnly: false,
+          trimester: null,
+          unit: test.unit,
+          isDefault: true,
+          createdAt: new Date(),
+        }),
+        ...parseRangeBounds(overrideText),
+        textRange: overrideText,
+      }
+    : range;
   const critical = test.criticalThresholds.find(
     (c) => (!c.gender || c.gender === order.patient.gender) && rangeCtx.ageDays >= c.ageMinDays && rangeCtx.ageDays <= c.ageMaxDays
   ) ?? null;
 
-  const flag = params.numericValue != null ? computeFlag({ numericValue: params.numericValue, range, criticalThreshold: critical }) : "NORMAL";
+  const flag = params.numericValue != null ? computeFlag({ numericValue: params.numericValue, range: effectiveRange as typeof range, criticalThreshold: critical }) : "NORMAL";
 
   // Delta check against this patient's most recent prior RELEASED result for the same test.
   let deltaFlagged = false;
@@ -93,7 +113,7 @@ export async function saveManualResult(params: {
     numericValue: params.numericValue ?? null,
     textValue: params.textValue ?? null,
     unit: test.unit,
-    referenceRangeText: formatRangeText(range),
+    referenceRangeText: overrideText || formatRangeText(range),
     flag,
     deltaFlag: deltaFlagged,
     deltaPrevValue,
@@ -145,41 +165,54 @@ export async function cascadeDerivedResults(orderId: string, vendorId: string) {
     valueByCode.set(ot.test.code, r?.numericValue ?? null);
   }
 
-  for (const ot of orderTests) {
-    const test = ot.test;
-    if (!test.isDerived || !test.derivationRule) continue;
+  for (let pass = 0; pass < 6; pass += 1) {
+    let changed = false;
+    for (const ot of orderTests) {
+      const test = ot.test;
+      if (!test.isDerived || !test.derivationRule) continue;
 
-    const inputs: Record<string, number | null | undefined> = {};
-    for (const key of Object.keys(Object.fromEntries(valueByCode))) inputs[key] = valueByCode.get(key);
+      const inputs: Record<string, number | null | undefined> = {};
+      for (const [code, value] of valueByCode) inputs[code] = value;
 
-    const calcResult = runCalcRule(test.derivationRule, inputs, calcCtx);
-    if (calcResult.value == null) continue; // inputs not all present yet, or suppressed by precondition — leave unset
+      const calcResult = runCalcRule(test.derivationRule, inputs, calcCtx);
+      if (calcResult.value == null) continue;
 
-    const range = resolveReferenceRange(test.referenceRanges, rangeCtx);
-    const critical = test.criticalThresholds.find(
-      (c) => (!c.gender || c.gender === order.patient.gender) && rangeCtx.ageDays >= c.ageMinDays && rangeCtx.ageDays <= c.ageMaxDays
-    ) ?? null;
-    const flag = computeFlag({ numericValue: calcResult.value, range, criticalThreshold: critical });
-    const rounded = Math.round(calcResult.value * Math.pow(10, test.decimalPrecision)) / Math.pow(10, test.decimalPrecision);
+      const range = resolveReferenceRange(test.referenceRanges, rangeCtx);
+      const critical =
+        test.criticalThresholds.find(
+          (c) =>
+            (!c.gender || c.gender === order.patient.gender) &&
+            rangeCtx.ageDays >= c.ageMinDays &&
+            rangeCtx.ageDays <= c.ageMaxDays
+        ) ?? null;
+      const flag = computeFlag({ numericValue: calcResult.value, range, criticalThreshold: critical });
+      const rounded = Math.round(calcResult.value * Math.pow(10, test.decimalPrecision)) / Math.pow(10, test.decimalPrecision);
 
-    const existing = existingResults.find((r) => r.testId === test.id);
-    const data = {
-      orderId,
-      testId: test.id,
-      numericValue: rounded,
-      unit: test.unit,
-      referenceRangeText: formatRangeText(range),
-      flag,
-      isDerived: true,
-      status: "ENTERED" as ResultStatus,
-      enteredAt: new Date(),
-    };
-    if (existing) {
-      await prisma.result.update({ where: { id: existing.id }, data });
-    } else {
-      await prisma.result.create({ data });
+      const existing = existingResults.find((r) => r.testId === test.id);
+      if (existing && existing.numericValue === rounded) continue;
+
+      const data = {
+        orderId,
+        testId: test.id,
+        numericValue: rounded,
+        unit: test.unit,
+        referenceRangeText: formatRangeText(range),
+        flag,
+        isDerived: true,
+        status: "ENTERED" as ResultStatus,
+        enteredAt: new Date(),
+      };
+      if (existing) {
+        await prisma.result.update({ where: { id: existing.id }, data });
+        existing.numericValue = rounded;
+      } else {
+        const created = await prisma.result.create({ data });
+        existingResults.push(created);
+      }
+      valueByCode.set(test.code, rounded);
+      changed = true;
     }
-    valueByCode.set(test.code, rounded);
+    if (!changed) break;
   }
 }
 

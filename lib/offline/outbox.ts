@@ -10,11 +10,19 @@ export type OutboxOp =
         priority: "ROUTINE" | "URGENT" | "STAT";
         testIds: string[];
         panelIds: string[];
+        discount?: number;
+        amountPaid?: number;
       };
     }
   | {
       type: "saveManualResult";
-      params: { orderId: string; testId: string; numericValue?: number | null; textValue?: string | null };
+      params: {
+        orderId: string;
+        testId: string;
+        numericValue?: number | null;
+        textValue?: string | null;
+        referenceRangeText?: string | null;
+      };
     }
   | { type: "transitionOrderStatus"; orderId: string; to: string }
   | { type: "markSampleCollectedAndReceived"; orderId: string }

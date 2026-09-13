@@ -13,7 +13,7 @@ export default function PatientsLoading() {
         actions={<Skeleton className="h-9 w-40 rounded-md" />}
         hint={
           <InstructionAlert title="How registration works">
-            Enter MRN and demographics first. Age or date of birth is used later for reference ranges. After you save, Aliquot opens New Order with this patient already selected.
+            Choose Mr, Mrs, or Miss, then enter name, age, and gender. Title fills gender; you can still change it. An MRN is assigned automatically.
           </InstructionAlert>
         }
       />

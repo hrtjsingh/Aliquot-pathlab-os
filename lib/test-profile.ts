@@ -144,6 +144,8 @@ export type TestProfile = {
   dataType: string;
   isDerived: boolean;
   autoVerifyEligible: boolean;
+  price: number;
+  formula: string;
   referenceRanges: Array<{
     id: string;
     gender: string | null;

@@ -5,30 +5,46 @@ import { requireTenant, requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { genderFromTitle, titledGivenName } from "@/lib/patient-name";
 
 const PatientSchema = z.object({
-  mrn: z.string().min(1),
-  firstName: z.string().min(1),
+  title: z.enum(["Mr", "Mrs", "Miss"]),
+  mrn: z.string().optional(),
+  firstName: z.string().min(1, "First name is required."),
   lastName: z.string().optional(),
-  dob: z.string().optional(), // yyyy-mm-dd, optional if ageYears supplied
   ageYears: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),
-    z.coerce.number().int().min(0).max(130).optional()
+    z.coerce.number().int().min(0).max(130, "Enter a valid age.")
   ),
   ageMonths: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),
     z.coerce.number().int().min(0).max(11).optional()
   ),
-  gender: z.enum(["MALE", "FEMALE", "OTHER"]),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
   isPregnant: z.boolean().optional(),
   pregnancyWeeks: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),
     z.coerce.number().int().min(1).max(45).optional()
   ),
   phone: z.string().optional(),
-  email: z.string().email().optional().or(z.literal("")),
+  email: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : typeof value === "string" ? value.trim() : value),
+    z.string().email("Enter a valid email.").optional()
+  ),
   address: z.string().optional(),
 });
+
+async function nextMrn(vendorId: string): Promise<string> {
+  const today = new Date();
+  const prefix = `P${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+  const countToday = await prisma.patient.count({
+    where: {
+      vendorId,
+      createdAt: { gte: new Date(today.getFullYear(), today.getMonth(), today.getDate()) },
+    },
+  });
+  return `${prefix}-${String(countToday + 1).padStart(4, "0")}`;
+}
 
 export async function createPatient(formData: FormData) {
   const user = await requireWritableLab();
@@ -42,36 +58,49 @@ export async function createPatient(formData: FormData) {
     return { ok: false as const, error: parsed.error.issues.map((i) => i.message).join(", ") };
   }
   const data = parsed.data;
+  const gender = data.gender ?? genderFromTitle(data.title);
+  if (!gender) return { ok: false as const, error: "Select gender." };
 
-  const patient = await prisma.patient.create({
-    data: {
-      vendorId: user.vendorId,
-      mrn: data.mrn,
-      firstName: data.firstName,
-      lastName: data.lastName || null,
-      dob: data.dob ? new Date(data.dob) : null,
-      ageYears: data.ageYears ?? null,
-      ageMonths: data.ageMonths ?? null,
-      gender: data.gender,
-      isPregnant: data.isPregnant ?? false,
-      pregnancyWeeks: data.pregnancyWeeks ?? null,
-      phone: data.phone || null,
-      email: data.email || null,
-      address: data.address || null,
-    },
-  });
+  const mrn = data.mrn?.trim() || (await nextMrn(user.vendorId));
+  const firstName = titledGivenName(data.title, data.firstName);
 
-  await logAudit({ vendorId: user.vendorId, userId: user.userId, action: "PATIENT_REGISTERED", entityType: "Patient", entityId: patient.id, after: patient });
-  revalidatePath("/patients");
-  return {
-    ok: true as const,
-    patientId: patient.id,
-    mrn: patient.mrn,
-    firstName: patient.firstName,
-    lastName: patient.lastName,
-    ageYears: patient.ageYears,
-    gender: patient.gender,
-  };
+  try {
+    const patient = await prisma.patient.create({
+      data: {
+        vendorId: user.vendorId,
+        mrn,
+        firstName,
+        lastName: data.lastName || null,
+        dob: null,
+        ageYears: data.ageYears,
+        ageMonths: data.ageMonths ?? null,
+        gender,
+        isPregnant: data.isPregnant ?? false,
+        pregnancyWeeks: data.pregnancyWeeks ?? null,
+        phone: data.phone || null,
+        email: data.email || null,
+        address: data.address || null,
+      },
+    });
+
+    await logAudit({ vendorId: user.vendorId, userId: user.userId, action: "PATIENT_REGISTERED", entityType: "Patient", entityId: patient.id, after: patient });
+    revalidatePath("/patients");
+    revalidatePath("/orders/new");
+    return {
+      ok: true as const,
+      patientId: patient.id,
+      mrn: patient.mrn,
+      firstName: patient.firstName,
+      lastName: patient.lastName,
+      ageYears: patient.ageYears,
+      gender: patient.gender,
+    };
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") {
+      return { ok: false as const, error: "Could not assign a unique MRN. Try again." };
+    }
+    throw error;
+  }
 }
 
 export async function searchPatients(query: string) {

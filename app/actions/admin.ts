@@ -5,6 +5,8 @@ import { assertWritableLab, requireRole, requireTenant } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { revalidatePath } from "next/cache";
 import { Role, TestCategory, ResultDataType, Gender } from "@prisma/client";
+import { asMoney } from "@/lib/money";
+import { formulaToDerivationRule } from "@/lib/test-deps";
 
 export async function createTest(formData: FormData) {
   const { userId, vendorId } = await requireRole(Role.ADMIN);
@@ -20,8 +22,17 @@ export async function createTest(formData: FormData) {
   const turnaroundHours = formData.get("turnaroundHours") ? Number(formData.get("turnaroundHours")) : null;
   const description = String(formData.get("description") || "").trim() || null;
   const collectionNotes = String(formData.get("collectionNotes") || "").trim() || null;
+  const priceRaw = String(formData.get("price") || "").trim();
+  const price = priceRaw ? Number(priceRaw) : 0;
+  const formula = String(formData.get("formula") || "").trim();
   const low = formData.get("low") ? Number(formData.get("low")) : null;
   const high = formData.get("high") ? Number(formData.get("high")) : null;
+
+  if (!code || !name) return { ok: false as const, error: "Code and name are required." };
+
+  const siblings = await prisma.test.findMany({ where: { vendorId }, select: { name: true, code: true } });
+  const parsedFormula = formulaToDerivationRule(formula, siblings);
+  if (!parsedFormula.ok) return { ok: false as const, error: parsedFormula.error };
 
   const test = await prisma.test.create({
     data: {
@@ -37,6 +48,9 @@ export async function createTest(formData: FormData) {
       description,
       collectionNotes,
       decimalPrecision: 2,
+      price: asMoney(price),
+      isDerived: Boolean(parsedFormula.rule),
+      derivationRule: parsedFormula.rule,
     },
   });
 
@@ -74,15 +88,26 @@ export async function updateTestProfile(formData: FormData) {
   const description = String(formData.get("description") || "").trim() || null;
   const collectionNotes = String(formData.get("collectionNotes") || "").trim() || null;
   const autoVerifyEligible = formData.get("autoVerifyEligible") === "on";
+  const priceRaw = String(formData.get("price") || "").trim();
+  const formula = String(formData.get("formula") || "").trim();
+  const name = String(formData.get("name") || "").trim();
+  const categoryRaw = String(formData.get("category") || "").trim();
 
   if (!specimenType) return { ok: false as const, error: "Specimen type is required." };
 
   const existing = await prisma.test.findFirst({ where: { id: testId, vendorId } });
   if (!existing) return { ok: false as const, error: "Test was not found in this lab." };
 
+  const siblings = await prisma.test.findMany({ where: { vendorId }, select: { name: true, code: true } });
+  const named = siblings.map((row) => (row.code === existing.code && name ? { ...row, name } : row));
+  const parsedFormula = formulaToDerivationRule(formula, named);
+  if (!parsedFormula.ok) return { ok: false as const, error: parsedFormula.error };
+
   const test = await prisma.test.update({
     where: { id: testId },
     data: {
+      name: name || existing.name,
+      category: categoryRaw ? (categoryRaw as TestCategory) : existing.category,
       shortName,
       specimenType,
       method,
@@ -92,6 +117,9 @@ export async function updateTestProfile(formData: FormData) {
       description,
       collectionNotes,
       autoVerifyEligible,
+      price: priceRaw === "" ? existing.price : asMoney(priceRaw),
+      isDerived: Boolean(parsedFormula.rule),
+      derivationRule: parsedFormula.rule,
     },
   });
 
@@ -160,4 +188,27 @@ export async function addCriticalThreshold(formData: FormData) {
 export async function getCanEditTests() {
   const user = await requireTenant();
   return user.role === Role.ADMIN;
+}
+
+export async function deleteUnusedTest(testId: string) {
+  const { userId, vendorId } = await requireRole(Role.ADMIN);
+  await assertWritableLab(vendorId);
+  const test = await prisma.test.findFirst({
+    where: { id: testId, vendorId },
+    include: { _count: { select: { orderTests: true, results: true, panelTests: true } } },
+  });
+  if (!test) return { ok: false as const, error: "Test was not found in this lab." };
+  if (test._count.orderTests > 0 || test._count.results > 0) {
+    await prisma.test.update({ where: { id: test.id }, data: { active: false } });
+    await logAudit({ vendorId, userId, action: "TEST_DEACTIVATED", entityType: "Test", entityId: test.id });
+    revalidatePath("/admin/tests");
+    return { ok: true as const, deactivated: true };
+  }
+  await prisma.referenceRange.deleteMany({ where: { testId: test.id } });
+  await prisma.criticalThreshold.deleteMany({ where: { testId: test.id } });
+  await prisma.panelTest.deleteMany({ where: { testId: test.id } });
+  await prisma.test.delete({ where: { id: test.id } });
+  await logAudit({ vendorId, userId, action: "TEST_DELETED", entityType: "Test", entityId: test.id });
+  revalidatePath("/admin/tests");
+  return { ok: true as const, deactivated: false };
 }

@@ -27,6 +27,26 @@ export function computeFlag({ numericValue, range, criticalThreshold }: FlagInpu
   return ResultFlag.NORMAL;
 }
 
+export function parseRangeBounds(rangeText: string | null | undefined): { low: number | null; high: number | null } {
+  const raw = (rangeText ?? "").trim();
+  if (!raw) return { low: null, high: null };
+  const dash = raw.match(/^([\d.]+)\s*[-–—to]+\s*([\d.]+)/i);
+  if (dash) return { low: Number(dash[1]), high: Number(dash[2]) };
+  const lt = raw.match(/^[<≤]\s*([\d.]+)/);
+  if (lt) return { low: null, high: Number(lt[1]) };
+  const gt = raw.match(/^[>≥]\s*([\d.]+)/);
+  if (gt) return { low: Number(gt[1]), high: null };
+  return { low: null, high: null };
+}
+
+export function previewFlag(numericValue: number | null, rangeText: string | null | undefined): ResultFlag {
+  if (numericValue == null || Number.isNaN(numericValue)) return ResultFlag.NORMAL;
+  const { low, high } = parseRangeBounds(rangeText);
+  if (low != null && numericValue < low) return ResultFlag.LOW;
+  if (high != null && numericValue > high) return ResultFlag.HIGH;
+  return ResultFlag.NORMAL;
+}
+
 export function requiresCriticalCallback(flag: ResultFlag): boolean {
   return flag === ResultFlag.CRITICAL_LOW || flag === ResultFlag.CRITICAL_HIGH;
 }

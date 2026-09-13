@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Package,
   Settings,
   Users,
   X,
@@ -30,6 +31,7 @@ const NAV: Array<{ href: string; label: string; icon: typeof LayoutDashboard; ro
   { href: "/worklist", label: "Worklist", icon: ClipboardList },
   { href: "/orders/new", label: "New Order", icon: FlaskConical },
   { href: "/admin/tests", label: "Test Master", icon: Settings, roles: ["ADMIN"] },
+  { href: "/admin/packages", label: "Packages", icon: Package, roles: ["ADMIN"] },
   { href: "/admin/lab", label: "Lab config", icon: FileOutput, roles: ["ADMIN"] },
 ];
 

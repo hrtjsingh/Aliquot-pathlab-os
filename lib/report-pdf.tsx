@@ -1,6 +1,7 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import { DEFAULT_REPORT_LAYOUT, type ReportLayout } from "@/lib/report-layout";
+import { encodeCode39 } from "@/lib/barcode";
 
 type ReportResult = {
   testName: string;
@@ -25,7 +26,7 @@ export type ReportData = {
     isoNo: string | null;
     letterheadUrl: string | null;
   };
-  patient: { name: string; age: string; gender: string; mrn: string };
+  patient: { name: string; age: string; gender: string; mrn: string; phone?: string | null; address?: string | null };
   accessionNo: string;
   referringDoctor: string | null;
   collectedAt: string | null;
@@ -73,12 +74,13 @@ function createStyles(layout: ReportLayout) {
     flagHigh: { color: "#a15c00" },
     flagCritical: { color: "#b3261e" },
     comment: { marginTop: 6, fontSize: 8.5, fontStyle: "italic", color },
-    footer: { position: "absolute", bottom: 24, left: 32, right: 32, borderTop: 1, borderColor: "#dfe3e4", paddingTop: 8, fontSize: 7.5, color: "#5b6670" },
-    signatureBlock: { marginTop: 24, flexDirection: "row", justifyContent: "flex-end" },
+    footer: { position: "absolute", bottom: 18, left: 32, right: 32, borderTop: 1, borderColor: "#dfe3e4", paddingTop: 6, fontSize: 7.5, color: "#5b6670" },
+    signatureBlock: { marginTop: 24, flexDirection: "row", justifyContent: "space-between" },
     qrBlock: { alignItems: "center", width: 72 },
     qrImage: { width: 64, height: 64 },
     qrCaption: { fontSize: 6.5, color: "#5b6670", marginTop: 3, textAlign: "center" },
     qrId: { fontSize: 7, fontWeight: 700, color, marginTop: 1, textAlign: "center" },
+    barcodeRow: { flexDirection: "row", height: 28, marginTop: 4, alignItems: "flex-end" },
     amendedBanner: { backgroundColor: "#b3261e", color: "white", padding: 4, textAlign: "center", fontSize: 9, fontWeight: 700, marginBottom: 8 },
   });
 }
@@ -94,6 +96,23 @@ function flagLabel(flag: string) {
 
 function contactLine(layout: ReportLayout) {
   return [layout.phone, layout.email, layout.website].filter(Boolean).join("  ·  ");
+}
+
+function AccessionBarcode({ text }: { text: string }) {
+  const bars = encodeCode39(text);
+  return (
+    <View style={{ marginTop: 4 }}>
+      <View style={{ flexDirection: "row", height: 26, alignItems: "flex-end" }}>
+        {bars.map((bar, index) => (
+          <View
+            key={`${index}-${bar.width}`}
+            style={{ width: bar.width, height: 26, backgroundColor: bar.black ? "#14181c" : "#ffffff" }}
+          />
+        ))}
+      </View>
+      <Text style={{ fontSize: 7, textAlign: "center", marginTop: 2 }}>{text}</Text>
+    </View>
+  );
 }
 
 export function LabReportDocument({
@@ -130,6 +149,7 @@ export function LabReportDocument({
           <View style={{ alignItems: layout.headerStyle === "centered" ? "center" : "flex-start", flexGrow: 1 }}>
             {showLogo ? <Image src={letterhead as string} style={styles.logo} /> : null}
             <Text style={styles.labName}>{data.branch.name}</Text>
+            {layout.subtitle ? <Text style={styles.labMeta}>{layout.subtitle}</Text> : null}
             <Text style={styles.reportTitle}>{layout.reportTitle}</Text>
             {layout.showAddress && data.branch.address ? <Text style={styles.labMeta}>{data.branch.address}</Text> : null}
             {layout.showContact && contact ? <Text style={styles.labMeta}>{contact}</Text> : null}
@@ -152,6 +172,7 @@ export function LabReportDocument({
             ) : (
               <Text style={styles.accessionMeta}>Reported: {data.reportedAt ?? "—"}</Text>
             )}
+            {layout.showBarcode ? <AccessionBarcode text={data.accessionNo} /> : null}
           </View>
           {showQr ? (
             <View style={styles.qrBlock}>
@@ -177,6 +198,18 @@ export function LabReportDocument({
             <View style={styles.patientCol}>
               <Text style={styles.label}>MRN</Text>
               <Text style={styles.value}>{data.patient.mrn}</Text>
+            </View>
+          ) : null}
+          {layout.showPatientPhone && data.patient.phone ? (
+            <View style={styles.patientCol}>
+              <Text style={styles.label}>Mobile</Text>
+              <Text style={styles.value}>{data.patient.phone}</Text>
+            </View>
+          ) : null}
+          {layout.showPatientAddress && data.patient.address ? (
+            <View style={styles.patientCol}>
+              <Text style={styles.label}>Address</Text>
+              <Text style={styles.value}>{data.patient.address}</Text>
             </View>
           ) : null}
           {layout.showReferringDoctor ? (
@@ -249,20 +282,39 @@ export function LabReportDocument({
           </View>
         ))}
 
-        {layout.showSignature && data.pathologistName ? (
+        {layout.showSignature || layout.signName ? (
           <View style={styles.signatureBlock}>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={{ fontWeight: 700 }}>{data.pathologistName}</Text>
-              {data.pathologistRegNo && <Text style={styles.labMeta}>Reg. No. {data.pathologistRegNo}</Text>}
-              <Text style={styles.labMeta}>Electronically authorized</Text>
-            </View>
+            {layout.signName ? (
+              <View>
+                <Text style={styles.labMeta}>{layout.signTitle}</Text>
+                <Text style={{ fontWeight: 700 }}>{layout.signName}</Text>
+                {layout.signQual ? <Text style={styles.labMeta}>{layout.signQual}</Text> : null}
+              </View>
+            ) : (
+              <View />
+            )}
+            {layout.showSignature && data.pathologistName ? (
+              <View style={{ alignItems: "flex-end" }}>
+                <Text style={{ fontWeight: 700 }}>{data.pathologistName}</Text>
+                {data.pathologistRegNo && <Text style={styles.labMeta}>Reg. No. {data.pathologistRegNo}</Text>}
+                <Text style={styles.labMeta}>Electronically authorized</Text>
+              </View>
+            ) : (
+              <View />
+            )}
           </View>
         ) : null}
 
         {layout.showFooter ? (
-          <Text style={styles.footer} fixed>
-            {layout.footerText}
-          </Text>
+          <View style={styles.footer} fixed>
+            {layout.footerLine2 ? <Text>{layout.footerLine2}</Text> : null}
+            <Text>{layout.footerText}</Text>
+            {layout.testsUndertaken ? (
+              <Text style={{ marginTop: 4 }}>
+                Tests undertaken: {layout.testsUndertaken}
+              </Text>
+            ) : null}
+          </View>
         ) : null}
       </Page>
     </Document>

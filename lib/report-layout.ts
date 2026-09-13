@@ -7,18 +7,27 @@ export type ReportLayout = {
   phone: string;
   email: string;
   website: string;
+  subtitle: string;
   footerText: string;
+  footerLine2: string;
+  signTitle: string;
+  signName: string;
+  signQual: string;
+  testsUndertaken: string;
   showAddress: boolean;
   showAccreditation: boolean;
   showContact: boolean;
-  showPatientMrn: boolean;
-  showReferringDoctor: boolean;
   showCollectionTimes: boolean;
-  showFlags: boolean;
+  showPatientMrn: boolean;
+  showPatientPhone: boolean;
+  showPatientAddress: boolean;
+  showReferringDoctor: boolean;
   showReferenceRange: boolean;
+  showFlags: boolean;
   showSignature: boolean;
   showFooter: boolean;
   showQrCode: boolean;
+  showBarcode: boolean;
 };
 
 export const DEFAULT_REPORT_LAYOUT: ReportLayout = {
@@ -28,12 +37,20 @@ export const DEFAULT_REPORT_LAYOUT: ReportLayout = {
   phone: "",
   email: "",
   website: "",
+  subtitle: "",
   footerText:
     "This report is generated electronically and reflects results at time of testing. Results should be interpreted in correlation with clinical findings. For queries, contact the laboratory quoting the accession number above.",
+  footerLine2: "Kindly correlate clinically.",
+  signTitle: "Checked By",
+  signName: "",
+  signQual: "",
+  testsUndertaken: "",
   showAddress: true,
   showAccreditation: true,
   showContact: true,
   showPatientMrn: true,
+  showPatientPhone: true,
+  showPatientAddress: true,
   showReferringDoctor: true,
   showCollectionTimes: true,
   showFlags: true,
@@ -41,6 +58,7 @@ export const DEFAULT_REPORT_LAYOUT: ReportLayout = {
   showSignature: true,
   showFooter: true,
   showQrCode: true,
+  showBarcode: true,
 };
 
 export function parseReportLayout(value: unknown): ReportLayout {
@@ -62,11 +80,19 @@ export function parseReportLayout(value: unknown): ReportLayout {
     phone: typeof raw.phone === "string" ? raw.phone : "",
     email: typeof raw.email === "string" ? raw.email : "",
     website: typeof raw.website === "string" ? raw.website : "",
+    subtitle: typeof raw.subtitle === "string" ? raw.subtitle : "",
     footerText: typeof raw.footerText === "string" && raw.footerText.trim() ? raw.footerText.trim() : DEFAULT_REPORT_LAYOUT.footerText,
+    footerLine2: typeof raw.footerLine2 === "string" ? raw.footerLine2 : DEFAULT_REPORT_LAYOUT.footerLine2,
+    signTitle: typeof raw.signTitle === "string" && raw.signTitle.trim() ? raw.signTitle.trim() : DEFAULT_REPORT_LAYOUT.signTitle,
+    signName: typeof raw.signName === "string" ? raw.signName : "",
+    signQual: typeof raw.signQual === "string" ? raw.signQual : "",
+    testsUndertaken: typeof raw.testsUndertaken === "string" ? raw.testsUndertaken : "",
     showAddress: raw.showAddress !== false,
     showAccreditation: raw.showAccreditation !== false,
     showContact: raw.showContact !== false,
     showPatientMrn: raw.showPatientMrn !== false,
+    showPatientPhone: raw.showPatientPhone !== false,
+    showPatientAddress: raw.showPatientAddress !== false,
     showReferringDoctor: raw.showReferringDoctor !== false,
     showCollectionTimes: raw.showCollectionTimes !== false,
     showFlags: raw.showFlags !== false,
@@ -74,6 +100,7 @@ export function parseReportLayout(value: unknown): ReportLayout {
     showSignature: raw.showSignature !== false,
     showFooter: raw.showFooter !== false,
     showQrCode: raw.showQrCode !== false,
+    showBarcode: raw.showBarcode !== false,
   };
 }
 

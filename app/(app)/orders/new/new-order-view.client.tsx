@@ -13,7 +13,7 @@ export function NewOrderView({ initialPatientId }: { initialPatientId?: string }
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
       <PageHeader
         title="New order"
-        description="Select a patient, add panels or tests, and set priority. An accession number is generated when you confirm."
+        description="Select a patient, add packages or tests, set discount and payment. An accession number is generated when you confirm."
       />
       <OrderForm
         patients={snapshot.patients}

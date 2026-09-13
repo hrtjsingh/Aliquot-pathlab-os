@@ -30,11 +30,14 @@ const TOGGLES: Array<{ key: keyof ReportLayout; label: string; hint: string }> =
   { key: "showCollectionTimes", label: "Collection timestamps", hint: "Collected, received, and reported times." },
   { key: "showPatientMrn", label: "Patient MRN", hint: "Include the medical record number." },
   { key: "showReferringDoctor", label: "Referring doctor", hint: "Print the referring clinician." },
+  { key: "showPatientPhone", label: "Patient phone", hint: "Print the registered phone number." },
+  { key: "showPatientAddress", label: "Patient address", hint: "Print the registered address." },
   { key: "showReferenceRange", label: "Reference range column", hint: "Show the range next to each result." },
   { key: "showFlags", label: "Result flags", hint: "Mark high, low, and critical values." },
   { key: "showSignature", label: "Pathologist signature", hint: "Print the authorizing pathologist." },
   { key: "showFooter", label: "Footer disclaimer", hint: "Print the legal note on every page." },
   { key: "showQrCode", label: "QR code", hint: "Print a scan-to-view QR with the accession ID." },
+  { key: "showBarcode", label: "Accession barcode", hint: "Print a Code 39 barcode for the accession number." },
 ];
 
 function flagLabel(flag: string) {
@@ -134,6 +137,15 @@ export function LabConfigForm({
               <Input id="website" value={layout.website} onChange={(event) => setLayoutField("website", event.target.value)} />
             </div>
             <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="subtitle">Letterhead subtitle</Label>
+              <Input
+                id="subtitle"
+                value={layout.subtitle}
+                placeholder="Pathology & Clinical Laboratory"
+                onChange={(event) => setLayoutField("subtitle", event.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
               <Label htmlFor="letterheadUrl">Logo URL</Label>
               <Input
                 id="letterheadUrl"
@@ -206,6 +218,38 @@ export function LabConfigForm({
             </div>
 
             <div className="flex flex-col gap-1.5">
+              <Label htmlFor="footerLine2">Footer line 2</Label>
+              <Input
+                id="footerLine2"
+                value={layout.footerLine2}
+                placeholder="Kindly correlate clinically."
+                onChange={(event) => setLayoutField("footerLine2", event.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="signTitle">Checked-by title</Label>
+                <Input id="signTitle" value={layout.signTitle} onChange={(event) => setLayoutField("signTitle", event.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="signName">Checked-by name</Label>
+                <Input id="signName" value={layout.signName} onChange={(event) => setLayoutField("signName", event.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="signQual">Checked-by qualification</Label>
+                <Input id="signQual" value={layout.signQual} onChange={(event) => setLayoutField("signQual", event.target.value)} />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="testsUndertaken">Tests undertaken</Label>
+              <Input
+                id="testsUndertaken"
+                value={layout.testsUndertaken}
+                placeholder="Biochemistry, Hematology, Immunoassay"
+                onChange={(event) => setLayoutField("testsUndertaken", event.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
               <Label htmlFor="footerText">Footer disclaimer</Label>
               <Textarea id="footerText" rows={4} value={layout.footerText} onChange={(event) => setLayoutField("footerText", event.target.value)} />
             </div>
@@ -247,6 +291,7 @@ export function LabConfigForm({
                   <p className="text-base font-semibold" style={{ color: layout.primaryColor }}>
                     {branch.name || "Laboratory"}
                   </p>
+                  {layout.subtitle ? <p className="text-[10px] text-[#5b6670]">{layout.subtitle}</p> : null}
                   <p className="text-[10px] uppercase tracking-wide" style={{ color: layout.primaryColor }}>
                     {layout.reportTitle || DEFAULT_REPORT_LAYOUT.reportTitle}
                   </p>
@@ -267,6 +312,13 @@ export function LabConfigForm({
                     </>
                   ) : null}
                   <p>Reported: 09 Sep 2026, 11:40</p>
+                  {layout.showBarcode ? (
+                    <div className="mt-1 flex h-4 items-end justify-end gap-px" aria-hidden>
+                      {Array.from({ length: 18 }).map((_, i) => (
+                        <span key={i} className="bg-[#14181c]" style={{ width: i % 3 === 0 ? 2 : 1, height: "100%" }} />
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
                 {layout.showQrCode ? (
                   <div className="flex w-16 shrink-0 flex-col items-center">
@@ -297,6 +349,18 @@ export function LabConfigForm({
                   <div>
                     <p className="text-[9px] uppercase text-[#5b6670]">MRN</p>
                     <p className="font-semibold">MRN-1001</p>
+                  </div>
+                ) : null}
+                {layout.showPatientPhone ? (
+                  <div>
+                    <p className="text-[9px] uppercase text-[#5b6670]">Phone</p>
+                    <p className="font-semibold">98765 43210</p>
+                  </div>
+                ) : null}
+                {layout.showPatientAddress ? (
+                  <div>
+                    <p className="text-[9px] uppercase text-[#5b6670]">Address</p>
+                    <p className="font-semibold">12 Clinical Avenue</p>
                   </div>
                 ) : null}
                 {layout.showReferringDoctor ? (
@@ -341,16 +405,33 @@ export function LabConfigForm({
                 <p className="mt-2 text-[10px] italic" style={{ color: layout.primaryColor }}>
                   Correlate with clinical findings.
                 </p>
-                {layout.showSignature ? (
-                  <div className="mt-4 text-right text-[10px]">
-                    <p className="font-semibold">Dr. Anita Rao</p>
-                    <p className="text-[#5b6670]">Reg. No. MCI-12345</p>
-                    <p className="text-[#5b6670]">Electronically authorized</p>
+                {layout.showSignature || layout.signName ? (
+                  <div className="mt-4 flex justify-between text-[10px]">
+                    {layout.signName ? (
+                      <div>
+                        <p className="text-[#5b6670]">{layout.signTitle || "Checked By"}</p>
+                        <p className="font-semibold">{layout.signName}</p>
+                        {layout.signQual ? <p className="text-[#5b6670]">{layout.signQual}</p> : null}
+                      </div>
+                    ) : (
+                      <span />
+                    )}
+                    {layout.showSignature ? (
+                      <div className="text-right">
+                        <p className="font-semibold">Dr. Anita Rao</p>
+                        <p className="text-[#5b6670]">Reg. No. MCI-12345</p>
+                        <p className="text-[#5b6670]">Electronically authorized</p>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
               {layout.showFooter ? (
-                <p className="border-t border-[#dfe3e4] px-4 py-2 text-[9px] leading-relaxed text-[#5b6670]">{layout.footerText}</p>
+                <div className="border-t border-[#dfe3e4] px-4 py-2 text-[9px] leading-relaxed text-[#5b6670]">
+                  {layout.footerLine2 ? <p>{layout.footerLine2}</p> : null}
+                  <p>{layout.footerText}</p>
+                  {layout.testsUndertaken ? <p className="mt-1">Tests undertaken: {layout.testsUndertaken}</p> : null}
+                </div>
               ) : null}
             </div>
           </CardContent>

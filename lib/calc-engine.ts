@@ -256,7 +256,121 @@ export const CALC_RULES: Record<string, CalcRule> = {
       return { value: (i.TOTAL_TESTOSTERONE! / i.SHBG!) * 100 };
     },
   },
+
+  EAG_FROM_HBA1C: {
+    key: "EAG_FROM_HBA1C",
+    label: "Estimated Average Glucose",
+    inputs: ["HBA1C"],
+    outputUnit: "mg/dL",
+    compute: (i) => {
+      if (!allPresent(i, ["HBA1C"])) return { value: null, suppressed: true };
+      return { value: i.HBA1C! * 28.7 - 46.7 };
+    },
+  },
+  BUN_FROM_UREA: {
+    key: "BUN_FROM_UREA",
+    label: "BUN from Blood Urea",
+    inputs: ["UREA"],
+    outputUnit: "mg/dL",
+    compute: (i) => {
+      if (!allPresent(i, ["UREA"])) return { value: null, suppressed: true };
+      return { value: i.UREA! * 0.467 };
+    },
+  },
+  VLDL_FROM_TG: {
+    key: "VLDL_FROM_TG",
+    label: "VLDL Cholesterol",
+    inputs: ["TRIGLYCERIDES"],
+    outputUnit: "mg/dL",
+    compute: (i) => {
+      if (!allPresent(i, ["TRIGLYCERIDES"])) return { value: null, suppressed: true };
+      return { value: i.TRIGLYCERIDES! / 5 };
+    },
+  },
+  LDL_HDL_RATIO: {
+    key: "LDL_HDL_RATIO",
+    label: "LDL/HDL Ratio",
+    inputs: ["LDL", "HDL"],
+    outputUnit: "",
+    compute: (i) => {
+      if (!allPresent(i, ["LDL", "HDL"]) || i.HDL === 0) return { value: null, suppressed: true };
+      return { value: i.LDL! / i.HDL! };
+    },
+  },
+  GLOBULIN_FROM_PROTEIN: {
+    key: "GLOBULIN_FROM_PROTEIN",
+    label: "Serum Globulin",
+    inputs: ["TOTAL_PROTEIN", "ALBUMIN"],
+    outputUnit: "g/dL",
+    compute: (i) => {
+      if (!allPresent(i, ["TOTAL_PROTEIN", "ALBUMIN"])) return { value: null, suppressed: true };
+      return { value: i.TOTAL_PROTEIN! - i.ALBUMIN! };
+    },
+  },
+  INDIRECT_BILIRUBIN: {
+    key: "INDIRECT_BILIRUBIN",
+    label: "Indirect Bilirubin",
+    inputs: ["TBIL", "DBIL"],
+    outputUnit: "mg/dL",
+    compute: (i) => {
+      if (!allPresent(i, ["TBIL", "DBIL"])) return { value: null, suppressed: true };
+      return { value: i.TBIL! - i.DBIL! };
+    },
+  },
+  AMC: {
+    key: "AMC",
+    label: "Absolute Monocyte Count",
+    inputs: ["TLC", "MONO_PCT"],
+    outputUnit: "/uL",
+    compute: (i) => {
+      if (!allPresent(i, ["TLC", "MONO_PCT"])) return { value: null, suppressed: true };
+      return { value: i.TLC! * (i.MONO_PCT! / 100) };
+    },
+  },
+  AEC: {
+    key: "AEC",
+    label: "Absolute Eosinophil Count",
+    inputs: ["TLC", "EOS_PCT"],
+    outputUnit: "/uL",
+    compute: (i) => {
+      if (!allPresent(i, ["TLC", "EOS_PCT"])) return { value: null, suppressed: true };
+      return { value: i.TLC! * (i.EOS_PCT! / 100) };
+    },
+  },
+  ABC: {
+    key: "ABC",
+    label: "Absolute Basophil Count",
+    inputs: ["TLC", "BASO_PCT"],
+    outputUnit: "/uL",
+    compute: (i) => {
+      if (!allPresent(i, ["TLC", "BASO_PCT"])) return { value: null, suppressed: true };
+      return { value: i.TLC! * (i.BASO_PCT! / 100) };
+    },
+  },
 };
+
+function evalArithmetic(expression: string, inputs: CalcInputs): CalcRuleResult {
+  const ids = [...expression.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)].map((match) => match[0]);
+  const unique = [...new Set(ids)];
+  for (const id of unique) {
+    const value = inputs[id];
+    if (value == null || Number.isNaN(value)) return { value: null, suppressed: true };
+  }
+  let built = expression;
+  for (const id of unique.sort((a, b) => b.length - a.length)) {
+    built = built.replace(new RegExp(`\\b${id}\\b`, "g"), `(${inputs[id]})`);
+  }
+  if (!/^[\d.eE+\-*/()\s]+$/.test(built)) {
+    throw new Error(`Unsafe derivation expression: ${expression}`);
+  }
+  try {
+    const value = Function(`"use strict"; return (${built});`)() as number;
+    if (typeof value !== "number" || !Number.isFinite(value)) return { value: null, suppressed: true };
+    return { value };
+  } catch {
+    return { value: null, suppressed: true };
+  }
+}
 
 /** Convenience: run a rule by key, throwing on unknown keys (a config error, not a runtime one). */
 export function runCalcRule(
@@ -265,7 +379,17 @@ export function runCalcRule(
   ctx: PatientContext,
   config?: Record<string, number>
 ): CalcRuleResult {
+  if (ruleKey.startsWith("expr:")) return evalArithmetic(ruleKey.slice(5).trim(), inputs);
   const rule = CALC_RULES[ruleKey];
   if (!rule) throw new Error(`Unknown derivation rule: ${ruleKey}. Register it in lib/calc-engine.ts.`);
   return rule.compute(inputs, ctx, config);
+}
+
+export function derivationInputCodes(ruleKey: string | null | undefined): string[] {
+  if (!ruleKey) return [];
+  if (ruleKey.startsWith("expr:")) {
+    const ids = [...ruleKey.slice(5).matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)].map((match) => match[0]);
+    return [...new Set(ids)];
+  }
+  return CALC_RULES[ruleKey]?.inputs ?? [];
 }

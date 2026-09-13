@@ -2,6 +2,7 @@ import { PrismaClient, TestCategory, ResultDataType, Gender, Role } from "@prism
 import bcrypt from "bcryptjs";
 import { DEFAULT_REPORT_LAYOUT } from "../lib/report-layout";
 import { BILLING_PLANS, LEGACY_PLAN_CODES } from "../lib/billing-plans";
+import { seedMasterCatalog } from "./seed-catalog";
 
 const prisma = new PrismaClient();
 
@@ -216,6 +217,7 @@ async function main() {
     { code: "TC_HDL_RATIO", high: 5, isDefault: true },
     { code: "DE_RITIS", low: 0.5, high: 2.0, isDefault: true },
   ];
+  await seedMasterCatalog(prisma, vendor.id);
   for (const r of ranges) {
     const test = await prisma.test.findUniqueOrThrow({ where: { vendorId_code: { vendorId: vendor.id, code: r.code } } });
     const existingRange = await prisma.referenceRange.findFirst({ where: { testId: test.id, isDefault: r.isDefault ?? false, gender: r.gender ?? null } });

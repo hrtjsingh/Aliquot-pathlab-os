@@ -1,23 +1,59 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, FlaskConical } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Ban, ClipboardList, FileText, FlaskConical, Receipt, Search } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { InstructionAlert } from "@/components/instruction-alert";
 import { PriorityBadge, StatusBadge } from "@/components/status-badge";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CacheMiss, useDataSync } from "@/components/data-sync";
-import { STATUS_LABELS } from "@/lib/workflow";
+import { STATUS_LABELS, isCustomerVisibleReport } from "@/lib/workflow";
+import { formatInr } from "@/lib/money";
+import { cancelOrder } from "@/app/actions/orders";
 import { cn } from "@/lib/utils";
 import type { OrderStatus } from "@prisma/client";
 import DashboardLoading from "./loading";
 
 const STATUSES = ["SAMPLE_RECEIVED", "RESULT_ENTRY", "TECH_VERIFIED", "AUTHORIZED", "RELEASED"] as const;
+const BOOKING_STATUSES = [
+  "ALL",
+  "ORDER_CREATED",
+  "SAMPLE_COLLECTED",
+  "SAMPLE_RECEIVED",
+  "RESULT_ENTRY",
+  "TECH_VERIFIED",
+  "AUTHORIZED",
+  "RELEASED",
+  "SENT_TO_CUSTOMER",
+  "COLLECTED_BY_CUSTOMER",
+  "CANCELLED",
+] as const;
+
+function todayIso() {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function canCancel(status: string) {
+  return ["ORDER_CREATED", "SAMPLE_COLLECTED", "SAMPLE_RECEIVED", "RESULT_ENTRY"].includes(status);
+}
 
 export function DashboardView() {
-  const { snapshot } = useDataSync();
+  const router = useRouter();
+  const { snapshot, patchSnapshot } = useDataSync();
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<(typeof BOOKING_STATUSES)[number]>("ALL");
+  const [from, setFrom] = useState(todayIso);
+  const [to, setTo] = useState(todayIso);
+
   if (!snapshot) return <CacheMiss loading={<DashboardLoading />} />;
 
   const { dashboard } = snapshot;
@@ -29,12 +65,44 @@ export function DashboardView() {
     dashboard.awaitingHandover ?? 0,
   ];
   const criticalOpen = dashboard.criticalOpen;
+  const bookings = dashboard.bookings ?? [];
+
+  const filtered = bookings.filter((order) => {
+    const day = order.createdAt.slice(0, 10);
+    if (from && day < from) return false;
+    if (to && day > to) return false;
+    if (statusFilter !== "ALL" && order.status !== statusFilter) return false;
+    if (!query.trim()) return true;
+    const haystack = `${order.patientName} ${order.accessionNo} ${order.phone ?? ""}`.toLowerCase();
+    return haystack.includes(query.trim().toLowerCase());
+  });
+
+  const collection = filtered.reduce(
+    (acc, row) => {
+      if (row.status === "CANCELLED" || row.status === "AMENDED") return acc;
+      acc.count += 1;
+      acc.total += row.totalCharge;
+      acc.discount += row.discount;
+      acc.paid += row.amountPaid;
+      acc.due += row.due;
+      return acc;
+    },
+    { count: 0, total: 0, discount: 0, paid: 0, due: 0 }
+  );
+
+  const collectionCards = [
+    { label: "Patients", value: String(collection.count) },
+    { label: "Total", value: formatInr(collection.total) },
+    { label: "Discount", value: formatInr(collection.discount) },
+    { label: "Collected", value: formatInr(collection.paid) },
+    { label: "Due", value: formatInr(collection.due), warn: collection.due > 0 },
+  ];
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
       <PageHeader
         title="Dashboard"
-        description="Lab-wide status at a glance. Open the worklist for today's queue."
+        description="Bookings, collection, and lab-wide status. Open an accession to enter results or print a bill."
         actions={
           <>
             <Button asChild variant="outline">
@@ -58,7 +126,7 @@ export function DashboardView() {
           >
             {criticalOpen > 0
               ? `${criticalOpen} open critical value${criticalOpen === 1 ? "" : "s"} are not yet released. Open those orders, log the clinician call-back, then continue verification.`
-              : "Use Worklist for samples in progress. Register a patient first if you are creating a new accession. Tap Sync when you want a fresh snapshot."}
+              : "Collection cards follow the date and status filters below. Use Today for the current counter, or All dates for the last 250 accessions."}
           </InstructionAlert>
         }
       />
@@ -96,17 +164,77 @@ export function DashboardView() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        {collectionCards.map((card) => (
+          <Card key={card.label} className={cn(card.warn && "border-destructive")}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-medium text-muted-foreground">{card.label}</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className={cn("text-xl font-semibold tabular", card.warn && "text-destructive")}>{card.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Recent orders</CardTitle>
-          <CardDescription>Newest accessions across the lab. Click a row to open results and workflow actions.</CardDescription>
+          <CardTitle>Bookings</CardTitle>
+          <CardDescription>Filter by date, status, or patient. Print a bill, open the report, or cancel before verification.</CardDescription>
         </CardHeader>
-        <CardContent className="p-0">
-          {dashboard.recent.length === 0 ? (
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <div className="relative w-full min-w-[400px]">
+              <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
+              <Input
+                className="pl-8"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search name, accession, or phone"
+                aria-label="Search bookings"
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <NativeSelect
+              className="w-full sm:w-44 sm:shrink-0"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              aria-label="Filter by status"
+            >
+              {BOOKING_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {status === "ALL" ? "All statuses" : STATUS_LABELS[status as OrderStatus] ?? status}
+                </option>
+              ))}
+            </NativeSelect>
+            <Input
+              className="w-full sm:w-40 sm:shrink-0"
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              aria-label="From date"
+            />
+            <Input
+              className="w-full sm:w-40 sm:shrink-0"
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              aria-label="To date"
+            />
+            <Button type="button" variant="outline" onClick={() => { setFrom(todayIso()); setTo(todayIso()); }}>
+              Today
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => { setFrom(""); setTo(""); setStatusFilter("ALL"); setQuery(""); }}>
+              All
+            </Button>
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
             <EmptyState
               icon={<ClipboardList className="size-5" />}
-              title="No orders yet"
-              description="Create the first accession from New Order after the patient is registered."
+              title="No bookings in this view"
+              description="Create an accession from New Order, or widen the date filter."
               action={
                 <Link href={"/orders/new" as never}>
                   <Button>
@@ -117,25 +245,99 @@ export function DashboardView() {
               }
             />
           ) : (
-            <ul className="flex flex-col divide-y divide-border">
-              {dashboard.recent.map((order) => (
-                <li key={order.id}>
-                  <Link
-                    href={`/orders/${order.id}` as never}
-                    className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-secondary/50"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{order.patientName}</p>
-                      <p className="tabular text-xs text-muted-foreground">{order.accessionNo}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <PriorityBadge priority={order.priority} />
-                      <StatusBadge status={order.status as OrderStatus} />
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-secondary/60 text-xs text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Accession</th>
+                    <th className="px-3 py-2 font-medium">Patient</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium text-right">Total</th>
+                    <th className="px-3 py-2 font-medium text-right">Due</th>
+                    <th className="px-3 py-2 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {filtered.map((order) => (
+                    <tr key={order.id} className="hover:bg-secondary/40">
+                      <td className="px-3 py-2">
+                        <p className="tabular font-medium">{order.accessionNo}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(order.createdAt).toLocaleString()}</p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <p className="font-medium">{order.patientName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[order.ageYears != null ? `${order.ageYears}y` : null, order.gender, order.phone].filter(Boolean).join(" · ")}
+                        </p>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <PriorityBadge priority={order.priority} />
+                          <StatusBadge status={order.status as OrderStatus} />
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular">{formatInr(order.totalCharge)}</td>
+                      <td className={cn("px-3 py-2 text-right tabular", order.due > 0 && "font-medium text-destructive")}>
+                        {formatInr(order.due)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex justify-end gap-1">
+                          {isCustomerVisibleReport(order.status as OrderStatus) ? (
+                            <Button asChild size="sm" variant="ghost">
+                              <Link href={`/orders/${order.id}/report` as never}>
+                                <FileText />
+                                Report
+                              </Link>
+                            </Button>
+                          ) : null}
+                          <Button asChild size="sm" variant="ghost">
+                            <a href={`/api/orders/${order.id}/receipt.pdf`} target="_blank" rel="noreferrer">
+                              <Receipt />
+                              Bill
+                            </a>
+                          </Button>
+                          <Button asChild size="sm" variant="ghost">
+                            <Link href={`/orders/${order.id}` as never}>Edit</Link>
+                          </Button>
+                          {canCancel(order.status) ? (
+                            <ConfirmDialog
+                              title={`Cancel ${order.accessionNo}?`}
+                              description="Cancelled accessions stay on the books with a cancelled status. Results cannot be entered after this."
+                              confirmLabel="Cancel order"
+                              variant="destructive"
+                              successMessage="Order cancelled."
+                              trigger={
+                                <Button size="sm" variant="ghost" type="button">
+                                  <Ban />
+                                  Cancel
+                                </Button>
+                              }
+                              onConfirm={async () => {
+                                await cancelOrder(order.id);
+                                await patchSnapshot((current) => ({
+                                  ...current,
+                                  worklist: current.worklist.filter((row) => row.id !== order.id),
+                                  dashboard: {
+                                    ...current.dashboard,
+                                    bookings: (current.dashboard.bookings ?? []).map((row) =>
+                                      row.id === order.id ? { ...row, status: "CANCELLED", due: 0 } : row
+                                    ),
+                                    recent: current.dashboard.recent.map((row) =>
+                                      row.id === order.id ? { ...row, status: "CANCELLED" } : row
+                                    ),
+                                  },
+                                }));
+                                router.refresh();
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

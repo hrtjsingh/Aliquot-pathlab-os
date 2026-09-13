@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { requireTenant } from "@/lib/rbac";
 import { WORKLIST_STATUSES } from "@/lib/workflow";
 import { syncVendorToCloud, type CloudSyncResult } from "@/lib/sync/cloud";
+import { asMoney, dueAmount } from "@/lib/money";
+import { readOrderBilling } from "@/lib/order-billing-db";
 
 export type LabSnapshot = {
   syncedAt: string;
@@ -15,9 +17,19 @@ export type LabSnapshot = {
     lastName: string | null;
     gender: string;
     ageYears: number | null;
+    phone: string | null;
   }>;
-  panels: Array<{ id: string; code: string; name: string; category: string }>;
-  tests: Array<{ id: string; code: string; name: string; category: string; isDerived: boolean }>;
+  panels: Array<{ id: string; code: string; name: string; category: string; price: number; testIds: string[] }>;
+  tests: Array<{
+    id: string;
+    code: string;
+    name: string;
+    category: string;
+    isDerived: boolean;
+    price: number;
+    derivationRule: string | null;
+    unit: string | null;
+  }>;
   worklist: Array<{
     id: string;
     accessionNo: string;
@@ -34,6 +46,22 @@ export type LabSnapshot = {
     awaitingHandover: number;
     criticalOpen: number;
     releasedToday: number;
+    collection: { count: number; total: number; discount: number; paid: number; due: number };
+    bookings: Array<{
+      id: string;
+      accessionNo: string;
+      createdAt: string;
+      status: string;
+      priority: string;
+      patientName: string;
+      phone: string | null;
+      ageYears: number | null;
+      gender: string;
+      totalCharge: number;
+      discount: number;
+      amountPaid: number;
+      due: number;
+    }>;
     recent: Array<{
       id: string;
       accessionNo: string;
@@ -52,22 +80,22 @@ export async function getLabSnapshot(): Promise<LabSnapshot> {
   const statuses = ["SAMPLE_RECEIVED", "RESULT_ENTRY", "TECH_VERIFIED", "AUTHORIZED"] as const;
   const vendorId = user.vendorId;
 
-  const [patients, panels, tests, worklist, counts, awaitingHandover, criticalOpen, releasedToday, recentOrders] = await Promise.all([
+  const [patients, panels, tests, worklist, counts, awaitingHandover, criticalOpen, releasedToday, recentOrders, bookingOrders] = await Promise.all([
     prisma.patient.findMany({
       where: { vendorId },
       orderBy: { createdAt: "desc" },
       take: 100,
-      select: { id: true, mrn: true, firstName: true, lastName: true, gender: true, ageYears: true },
+      select: { id: true, mrn: true, firstName: true, lastName: true, gender: true, ageYears: true, phone: true },
     }),
     prisma.panel.findMany({
       where: { vendorId, active: true },
       orderBy: { name: "asc" },
-      select: { id: true, code: true, name: true, category: true },
+      select: { id: true, code: true, name: true, category: true, price: true, panelTests: { select: { testId: true } } },
     }),
     prisma.test.findMany({
       where: { vendorId, active: true },
       orderBy: { name: "asc" },
-      select: { id: true, code: true, name: true, category: true, isDerived: true },
+      select: { id: true, code: true, name: true, category: true, isDerived: true, price: true, derivationRule: true, unit: true },
     }),
     prisma.order.findMany({
       where: {
@@ -104,13 +132,71 @@ export async function getLabSnapshot(): Promise<LabSnapshot> {
         patient: { select: { firstName: true, lastName: true } },
       },
     }),
+    prisma.order.findMany({
+      where: { vendorId },
+      orderBy: { createdAt: "desc" },
+      take: 250,
+      select: {
+        id: true,
+        accessionNo: true,
+        createdAt: true,
+        status: true,
+        priority: true,
+        patient: { select: { firstName: true, lastName: true, phone: true, ageYears: true, gender: true } },
+      },
+    }),
   ]);
+
+  const billing = await readOrderBilling(bookingOrders.map((order) => order.id));
+  const bookings = bookingOrders.map((order) => {
+    const money = billing.get(order.id) ?? { totalCharge: 0, discount: 0, amountPaid: 0 };
+    const totalCharge = money.totalCharge;
+    const discount = money.discount;
+    const amountPaid = money.amountPaid;
+    return {
+      id: order.id,
+      accessionNo: order.accessionNo,
+      createdAt: order.createdAt.toISOString(),
+      status: order.status,
+      priority: order.priority,
+      patientName: `${order.patient.firstName} ${order.patient.lastName ?? ""}`.trim(),
+      phone: order.patient.phone,
+      ageYears: order.patient.ageYears,
+      gender: order.patient.gender,
+      totalCharge,
+      discount,
+      amountPaid,
+      due: dueAmount(totalCharge, discount, amountPaid),
+    };
+  });
+  const collection = bookings.reduce(
+    (acc, row) => {
+      if (row.status === "CANCELLED" || row.status === "AMENDED") return acc;
+      acc.count += 1;
+      acc.total += row.totalCharge;
+      acc.discount += row.discount;
+      acc.paid += row.amountPaid;
+      acc.due += row.due;
+      return acc;
+    },
+    { count: 0, total: 0, discount: 0, paid: 0, due: 0 }
+  );
 
   return {
     syncedAt: new Date().toISOString(),
     patients,
-    panels,
-    tests,
+    panels: panels.map((panel) => ({
+      id: panel.id,
+      code: panel.code,
+      name: panel.name,
+      category: panel.category,
+      price: asMoney(panel.price),
+      testIds: panel.panelTests.map((member) => member.testId),
+    })),
+    tests: tests.map((test) => ({
+      ...test,
+      price: asMoney(test.price),
+    })),
     worklist: worklist.map((order) => ({
       id: order.id,
       accessionNo: order.accessionNo,
@@ -127,6 +213,8 @@ export async function getLabSnapshot(): Promise<LabSnapshot> {
       awaitingHandover,
       criticalOpen,
       releasedToday,
+      collection,
+      bookings,
       recent: recentOrders.map((order) => ({
         id: order.id,
         accessionNo: order.accessionNo,
