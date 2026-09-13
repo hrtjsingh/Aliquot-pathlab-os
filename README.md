@@ -62,16 +62,14 @@ npm run hq                         # API :8787 and UI http://127.0.0.1:5174
 
 HQ login: `hq@aliquot.test` / `Password123!`.
 
-First HQ start writes the public key to `.license-public.pem` (gitignored) and
-into the `LicenseAuthority` row on the HQ database. The LIMS reads env
-`LICENSE_PUBLIC_KEY`, the pem file, or that Neon row — then blocks writes when
-the signed lease is missing, expired, or tampered with.
+First HQ start keeps the private key in `hq/.data/` and publishes the public
+verify key into Neon `LicenseAuthority`. The LIMS backend loads that row (and
+each lab’s signed lease) from the database — no `LICENSE_PUBLIC_KEY` on Vercel.
 
-**Vercel + Neon:** apply migrations (`npm run db:migrate:cloud`), point HQ at
-`CLOUD_DATABASE_URL`, start HQ once (Cloud env). That publishes the verify key
-and signed leases. Optional: set `LICENSE_PUBLIC_KEY` in the Vercel project.
-New labs start on a 10-day trial. HQ then applies a paid term: 3 months ₹2,000,
-6 months ₹3,500, or 1 year ₹6,000. Each apply re-signs the master lease.
+**Vercel + Neon:** `npm run db:migrate:cloud`, point HQ at Live Neon
+(`CLOUD_DATABASE_URL`), start HQ once. That publishes lease authority + signed
+leases. New labs start on a 10-day trial. HQ then applies a paid term: 3 months
+₹2,000, 6 months ₹3,500, or 1 year ₹6,000. Each apply re-signs the master lease.
 
 ## What's actually implemented (not just modeled)
 

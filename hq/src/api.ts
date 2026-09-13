@@ -78,6 +78,7 @@ export type HqEnvInfo = {
   host: string;
   available: { cloud: boolean; local: boolean };
   prefill: { email: string; password: string; name: string };
+  licenseAuthorityPublished: boolean;
 };
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {

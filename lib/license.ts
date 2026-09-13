@@ -22,14 +22,6 @@ export type LicenseStatus = {
 
 let cachedPublicKey: string | null | undefined;
 
-function loadPublicKeyFromDisk() {
-  const fromEnv = process.env.LICENSE_PUBLIC_KEY?.trim();
-  if (fromEnv) return normalizePem(fromEnv);
-  const file = path.join(process.cwd(), ".license-public.pem");
-  if (existsSync(file)) return normalizePem(readFileSync(file, "utf8"));
-  return null;
-}
-
 async function loadPublicKeyFromDb(client: PrismaClient) {
   try {
     const row = await client.licenseAuthority.findUnique({
@@ -42,21 +34,19 @@ async function loadPublicKeyFromDb(client: PrismaClient) {
   }
 }
 
-/** Env / file first; then Neon (or local) LicenseAuthority published by HQ. */
+/** Local lab PC only — HQ writes this beside the app; never required on Vercel. */
+function loadPublicKeyFromLocalFile() {
+  const file = path.join(process.cwd(), ".license-public.pem");
+  if (existsSync(file)) return normalizePem(readFileSync(file, "utf8"));
+  return null;
+}
+
+/**
+ * Resolve HQ verify key from the backend DB (LicenseAuthority), not from env.
+ * Order: Neon CLOUD_DATABASE_URL → app DATABASE_URL → local .license-public.pem (offline lab).
+ */
 export async function resolvePublicKeyPem() {
   if (cachedPublicKey !== undefined) return cachedPublicKey;
-
-  const fromDisk = loadPublicKeyFromDisk();
-  if (fromDisk) {
-    cachedPublicKey = fromDisk;
-    return fromDisk;
-  }
-
-  const fromLocal = await loadPublicKeyFromDb(prisma);
-  if (fromLocal) {
-    cachedPublicKey = fromLocal;
-    return fromLocal;
-  }
 
   const cloud = getCloudPrisma();
   if (cloud) {
@@ -65,6 +55,18 @@ export async function resolvePublicKeyPem() {
       cachedPublicKey = fromCloud;
       return fromCloud;
     }
+  }
+
+  const fromAppDb = await loadPublicKeyFromDb(prisma);
+  if (fromAppDb) {
+    cachedPublicKey = fromAppDb;
+    return fromAppDb;
+  }
+
+  const fromFile = loadPublicKeyFromLocalFile();
+  if (fromFile) {
+    cachedPublicKey = fromFile;
+    return fromFile;
   }
 
   cachedPublicKey = null;
@@ -242,6 +244,7 @@ export async function getLicenseStatus(
     expiresAt: null,
     planCode: null,
     seats: null,
-    message: "HQ license public key is not installed; subscription is not enforced on this lab server.",
+    message:
+      "Subscription authority is not published yet. Start Aliquot HQ on Live Neon once so this backend can verify signed leases.",
   };
 }

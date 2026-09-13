@@ -11,7 +11,7 @@ import { formatPlanTerm, planExpiresAt, planIsTrial } from "../../lib/billing-pl
 import { buildLeasePayload, signLease } from "../../lib/license-crypto.ts";
 import { clearSessionCookie, requireHq, setSessionCookie, type Env } from "./auth.ts";
 import { hqPrisma, getHqDbInfo, switchHqDbTarget } from "./db.ts";
-import { HQ_ORIGIN, HQ_PORT, HQ_ROOT, type HqDbTarget } from "./env.ts";
+import { availableDbTargets, HQ_ORIGIN, HQ_PORT, HQ_ROOT, type HqDbTarget } from "./env.ts";
 import { loadOrCreateHqKeys } from "./license-keys.ts";
 import { ensureHqSeed, HQ_EMAIL, HQ_PASSWORD } from "./seed.ts";
 
@@ -96,12 +96,41 @@ app.post("/api/auth/login", async (c) => {
   return c.json({ id: admin.id, email: admin.email, name: admin.name });
 });
 
-app.get("/api/env", (c) =>
-  c.json({
-    ...getHqDbInfo(),
-    prefill: { email: HQ_EMAIL, password: HQ_PASSWORD, name: "Aliquot HQ" },
-  })
-);
+app.get("/api/env", async (c) => {
+  try {
+    const keys = loadOrCreateHqKeys();
+    // Keep authority key on the active DB so Vercel validates from Neon, not env.
+    try {
+      await hqPrisma.licenseAuthority.upsert({
+        where: { id: "hq" },
+        update: { publicKeyPem: keys.publicKeyPem },
+        create: { id: "hq", publicKeyPem: keys.publicKeyPem },
+      });
+    } catch {
+      /* table may be missing until migrate */
+    }
+    const published = await hqPrisma.licenseAuthority
+      .findUnique({ where: { id: "hq" }, select: { id: true } })
+      .then((row) => Boolean(row))
+      .catch(() => false);
+    return c.json({
+      ...getHqDbInfo(),
+      prefill: { email: HQ_EMAIL, password: HQ_PASSWORD, name: "Aliquot HQ" },
+      licenseAuthorityPublished: published,
+    });
+  } catch (error) {
+    const available = availableDbTargets();
+    const target = available.cloud ? "cloud" : available.local ? "local" : "local";
+    return c.json({
+      target,
+      label: "Unavailable",
+      host: error instanceof Error ? error.message : "Database not configured",
+      available,
+      prefill: { email: HQ_EMAIL, password: HQ_PASSWORD, name: "Aliquot HQ" },
+      licenseAuthorityPublished: false,
+    });
+  }
+});
 
 app.post("/api/env", async (c) => {
   const body = (await c.req.json().catch(() => null)) as { target?: string } | null;
@@ -110,11 +139,16 @@ app.post("/api/env", async (c) => {
     return c.json({ error: "Choose cloud or local." }, 400);
   }
   try {
-    const info = await switchHqDbTarget(target as HqDbTarget);
+    await switchHqDbTarget(target as HqDbTarget);
     await ensureHqSeed();
+    const published = await hqPrisma.licenseAuthority
+      .findUnique({ where: { id: "hq" }, select: { id: true } })
+      .then((row) => Boolean(row))
+      .catch(() => false);
     return c.json({
-      ...info,
+      ...getHqDbInfo(),
       prefill: { email: HQ_EMAIL, password: HQ_PASSWORD, name: "Aliquot HQ" },
+      licenseAuthorityPublished: published,
     });
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : "Could not switch database." }, 400);
@@ -578,12 +612,18 @@ if (existsSync(distDir)) {
 
 async function main() {
   const info = getHqDbInfo();
-  await ensureHqSeed();
+  try {
+    await ensureHqSeed();
+  } catch (error) {
+    console.error("HQ seed failed — check migrations / DB URL, or switch database in the UI.");
+    console.error(error);
+  }
   serve({ fetch: app.fetch, port: HQ_PORT, hostname: "127.0.0.1" }, (infoPort) => {
     console.log(`Aliquot HQ API http://127.0.0.1:${infoPort.port}`);
     console.log(`Database: ${info.label} · ${info.host}`);
     console.log(`HQ login: ${HQ_EMAIL} / ${HQ_PASSWORD}`);
     console.log("UI: npm run dev:ui  →  http://127.0.0.1:5174");
+    console.log("Switch Live Neon ↔ Local from the HQ header / login screen.");
   });
 }
 

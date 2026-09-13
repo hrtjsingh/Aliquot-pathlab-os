@@ -38,15 +38,13 @@ function EnvPicker({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
-  if (!env) return null;
-
   async function choose(target: "cloud" | "local") {
-    if (target === env?.target || pending) return;
-    if (target === "cloud" && !env?.available.cloud) {
+    if (!env || target === env.target || pending) return;
+    if (target === "cloud" && !env.available.cloud) {
       setError("CLOUD_DATABASE_URL is not set in .env");
       return;
     }
-    if (target === "local" && !env?.available.local) {
+    if (target === "local" && !env.available.local) {
       setError("DATABASE_URL is not set in .env");
       return;
     }
@@ -62,35 +60,84 @@ function EnvPicker({
     }
   }
 
-  return (
-    <div className={compact ? "space-y-1" : "space-y-2"}>
-      <div className={`flex flex-wrap items-center gap-2 ${compact ? "" : ""}`}>
-        <span className="mono text-[11px] tracking-[0.16em] text-[#3d4f59] uppercase">Env</span>
-        {(
-          [
-            ["cloud", "Cloud", env.available.cloud],
-            ["local", "Local", env.available.local],
-          ] as const
-        ).map(([id, label, available]) => (
-          <button
-            key={id}
-            type="button"
-            disabled={!available || pending}
-            onClick={() => void choose(id)}
-            className={`px-2.5 py-1 text-xs font-semibold disabled:opacity-40 ${
-              env.target === id ? "bg-[#0f766e] text-white" : "border border-[#1c3f52]/20 text-[#1c3f52]"
-            }`}
-            title={available ? undefined : `${label} URL not configured`}
-          >
-            {label}
-          </button>
-        ))}
+  if (!env) {
+    return (
+      <div className={`rounded-sm border border-[#b3261e]/30 bg-[#b3261e]/5 px-3 py-2 ${compact ? "" : ""}`}>
+        <p className="text-xs font-semibold text-[#b3261e]">Database unavailable</p>
+        <p className="mono text-[11px] text-[#3d4f59]">Start the HQ API, then refresh.</p>
       </div>
-      <p className="mono text-[11px] text-[#3d4f59]">
+    );
+  }
+
+  const other: "cloud" | "local" = env.target === "cloud" ? "local" : "cloud";
+  const otherAvailable = env.available[other];
+  const otherLabel = other === "cloud" ? "Live Neon" : "Local";
+
+  return (
+    <div
+      className={`rounded-sm border border-[#1c3f52]/15 bg-[#f4f6f7] ${compact ? "px-3 py-2" : "px-3 py-3"}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mono text-[11px] tracking-[0.16em] text-[#3d4f59] uppercase">Database</span>
+        <span
+          className={`px-2 py-0.5 text-[11px] font-bold ${
+            env.target === "cloud" ? "bg-[#0f766e] text-white" : "bg-[#1c3f52] text-white"
+          }`}
+        >
+          {env.target === "cloud" ? "Live Neon" : "Local"}
+        </span>
+        <div className="flex flex-wrap items-center gap-1">
+          {(
+            [
+              ["cloud", "Live Neon", env.available.cloud],
+              ["local", "Local", env.available.local],
+            ] as const
+          ).map(([id, label, available]) => (
+            <button
+              key={id}
+              type="button"
+              disabled={!available || pending || env.target === id}
+              onClick={() => void choose(id)}
+              className={`px-2.5 py-1 text-xs font-semibold disabled:opacity-40 ${
+                env.target === id
+                  ? "bg-[#0f766e] text-white"
+                  : "border border-[#1c3f52]/25 bg-white text-[#1c3f52] hover:border-[#0f766e]"
+              }`}
+              title={available ? `Use ${label}` : `${label} URL not configured`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {otherAvailable ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void choose(other)}
+            className="border border-[#0f766e] bg-white px-2.5 py-1 text-xs font-semibold text-[#0f766e] disabled:opacity-50"
+          >
+            {pending ? "Switching…" : `Switch to ${otherLabel}`}
+          </button>
+        ) : null}
+        <span
+          className={`ml-auto px-2 py-0.5 text-[11px] font-semibold ${
+            env.licenseAuthorityPublished
+              ? "bg-[#0f766e]/15 text-[#0f766e]"
+              : "bg-[#b3261e]/10 text-[#b3261e]"
+          }`}
+          title="Labs verify signed leases against LicenseAuthority in this database"
+        >
+          {env.licenseAuthorityPublished ? "Lease authority on DB" : "Lease authority missing — run seed"}
+        </span>
+      </div>
+      <p className="mono mt-1.5 text-[11px] text-[#3d4f59]">
         {env.label} · {env.host}
         {pending ? " · switching…" : ""}
       </p>
-      {error ? <p className="text-xs text-[#b3261e]">{error}</p> : null}
+      <p className="mt-1 text-[11px] text-[#3d4f59]">
+        Vercel validates subscriptions from Neon (signed lease + public key in DB). No LICENSE_PUBLIC_KEY env needed.
+      </p>
+      {error ? <p className="mt-1 text-xs text-[#b3261e]">{error}</p> : null}
     </div>
   );
 }
@@ -249,15 +296,6 @@ function Console({
             <h1 className="display text-3xl text-[#1c3f52]">Aliquot HQ</h1>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm">
-            <EnvPicker
-              env={env}
-              onChange={onEnvChange}
-              compact
-              onSwitched={async () => {
-                await hqApi.logout().catch(() => undefined);
-                onSignOut();
-              }}
-            />
             <div className="text-right">
               <p className="font-medium">{me.name}</p>
               <p className="mono text-xs text-[#3d4f59]">{me.email}</p>
@@ -271,6 +309,18 @@ function Console({
             >
               Sign out
             </button>
+          </div>
+        </div>
+        <div className="border-t border-[#1c3f52]/10 bg-[#f4f6f7]/80">
+          <div className="mx-auto max-w-6xl px-6 py-2.5">
+            <EnvPicker
+              env={env}
+              onChange={onEnvChange}
+              onSwitched={async () => {
+                await hqApi.logout().catch(() => undefined);
+                onSignOut();
+              }}
+            />
           </div>
         </div>
       </header>
