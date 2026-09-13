@@ -14,7 +14,9 @@ const nextConfig: NextConfig = {
       static: 86400,
     },
   },
-  output: "standalone",
+  // Next 16.3 + Vercel adapter skips next-server.js.nft.json when standalone is set,
+  // then onBuildComplete fails with ENOENT. Keep standalone for Electron/desktop only.
+  output: process.env.VERCEL ? undefined : "standalone",
   async headers() {
     return [
       {
