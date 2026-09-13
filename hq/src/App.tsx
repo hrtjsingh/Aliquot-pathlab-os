@@ -1,44 +1,133 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { hqApi, type LabSummary, type Overview, type Plan } from "./api.ts";
+import { hqApi, type HqEnvInfo, type LabSummary, type Overview, type Plan } from "./api.ts";
 import { CreateLabDialog, LabActionDialog } from "./dialogs.tsx";
 import { formatDate, formatPlanPrice, leaseColor, leaseLabel, leaseTone } from "./format.ts";
 
 export function App() {
   const [me, setMe] = useState<{ name: string; email: string } | null>(null);
   const [ready, setReady] = useState(false);
+  const [env, setEnv] = useState<HqEnvInfo | null>(null);
 
   useEffect(() => {
-    hqApi
-      .me()
-      .then((user) => setMe(user))
-      .catch(() => setMe(null))
+    Promise.all([hqApi.env().catch(() => null), hqApi.me().catch(() => null)])
+      .then(([nextEnv, user]) => {
+        setEnv(nextEnv);
+        setMe(user);
+      })
       .finally(() => setReady(true));
   }, []);
 
   if (!ready) {
     return <div className="grid min-h-dvh place-items-center text-sm text-[#3d4f59]">Opening the HQ ledger…</div>;
   }
-  if (!me) return <Login onSignedIn={setMe} />;
-  return <Console me={me} onSignOut={() => setMe(null)} />;
+  if (!me) return <Login env={env} onEnvChange={setEnv} onSignedIn={setMe} />;
+  return <Console me={me} env={env} onEnvChange={setEnv} onSignOut={() => setMe(null)} />;
 }
 
-function Login({ onSignedIn }: { onSignedIn: (user: { name: string; email: string }) => void }) {
-  const [error, setError] = useState("");
+function EnvPicker({
+  env,
+  onChange,
+  compact,
+  onSwitched,
+}: {
+  env: HqEnvInfo | null;
+  onChange: (env: HqEnvInfo) => void;
+  compact?: boolean;
+  onSwitched?: () => void | Promise<void>;
+}) {
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
+  if (!env) return null;
+
+  async function choose(target: "cloud" | "local") {
+    if (target === env?.target || pending) return;
+    if (target === "cloud" && !env?.available.cloud) {
+      setError("CLOUD_DATABASE_URL is not set in .env");
+      return;
+    }
+    if (target === "local" && !env?.available.local) {
+      setError("DATABASE_URL is not set in .env");
+      return;
+    }
     setPending(true);
     setError("");
     try {
-      const user = await hqApi.login(String(form.get("email")), String(form.get("password")));
+      onChange(await hqApi.setEnv(target));
+      await onSwitched?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not switch database.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className={compact ? "space-y-1" : "space-y-2"}>
+      <div className={`flex flex-wrap items-center gap-2 ${compact ? "" : ""}`}>
+        <span className="mono text-[11px] tracking-[0.16em] text-[#3d4f59] uppercase">Env</span>
+        {(
+          [
+            ["cloud", "Cloud", env.available.cloud],
+            ["local", "Local", env.available.local],
+          ] as const
+        ).map(([id, label, available]) => (
+          <button
+            key={id}
+            type="button"
+            disabled={!available || pending}
+            onClick={() => void choose(id)}
+            className={`px-2.5 py-1 text-xs font-semibold disabled:opacity-40 ${
+              env.target === id ? "bg-[#0f766e] text-white" : "border border-[#1c3f52]/20 text-[#1c3f52]"
+            }`}
+            title={available ? undefined : `${label} URL not configured`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mono text-[11px] text-[#3d4f59]">
+        {env.label} · {env.host}
+        {pending ? " · switching…" : ""}
+      </p>
+      {error ? <p className="text-xs text-[#b3261e]">{error}</p> : null}
+    </div>
+  );
+}
+
+function Login({
+  env,
+  onEnvChange,
+  onSignedIn,
+}: {
+  env: HqEnvInfo | null;
+  onEnvChange: (env: HqEnvInfo) => void;
+  onSignedIn: (user: { name: string; email: string }) => void;
+}) {
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      const user = await hqApi.login(email, password);
       onSignedIn(user);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sign in.");
     } finally {
       setPending(false);
     }
+  }
+
+  function prefillAdmin() {
+    const next = env?.prefill ?? { email: "hq@aliquot.test", password: "Password123!", name: "Aliquot HQ" };
+    setEmail(next.email);
+    setPassword(next.password);
+    setError("");
   }
 
   return (
@@ -53,13 +142,17 @@ function Login({ onSignedIn }: { onSignedIn: (user: { name: string; email: strin
       </div>
       <form onSubmit={submit} className="rounded-sm border border-[#1c3f52]/15 bg-white p-6 shadow-[6px_6px_0_#1c3f52]">
         <p className="display text-2xl text-[#1c3f52]">Super admin</p>
+        <div className="mt-4">
+          <EnvPicker env={env} onChange={onEnvChange} />
+        </div>
         <label className="mt-5 block text-sm font-medium">
           Email
           <input
             name="email"
             type="email"
             required
-            defaultValue="hq@aliquot.test"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             className="mt-1 w-full rounded-sm border border-[#d7dddf] bg-[#f4f6f7] px-3 py-2"
           />
         </label>
@@ -69,10 +162,18 @@ function Login({ onSignedIn }: { onSignedIn: (user: { name: string; email: strin
             name="password"
             type="password"
             required
-            defaultValue="Password123!"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
             className="mt-1 w-full rounded-sm border border-[#d7dddf] bg-[#f4f6f7] px-3 py-2"
           />
         </label>
+        <button
+          type="button"
+          onClick={prefillAdmin}
+          className="mt-3 border border-[#0f766e]/40 px-3 py-1.5 text-xs font-semibold text-[#0f766e]"
+        >
+          Prefill admin details
+        </button>
         {error ? <p className="mt-3 text-sm text-[#b3261e]">{error}</p> : null}
         <button
           disabled={pending}
@@ -87,7 +188,17 @@ function Login({ onSignedIn }: { onSignedIn: (user: { name: string; email: strin
 
 type Filter = "all" | "trial" | "paid" | "attention";
 
-function Console({ me, onSignOut }: { me: { name: string; email: string }; onSignOut: () => void }) {
+function Console({
+  me,
+  env,
+  onEnvChange,
+  onSignOut,
+}: {
+  me: { name: string; email: string };
+  env: HqEnvInfo | null;
+  onEnvChange: (env: HqEnvInfo) => void;
+  onSignOut: () => void;
+}) {
   const [labs, setLabs] = useState<LabSummary[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -110,8 +221,8 @@ function Console({ me, onSignOut }: { me: { name: string; email: string }; onSig
   }
 
   useEffect(() => {
-    reload().catch((err) => setError(err instanceof Error ? err.message : "Could not load the dashboard."));
-  }, []);
+    void reload().catch((err) => setError(err instanceof Error ? err.message : "Could not load the dashboard."));
+  }, [env?.target]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -132,12 +243,21 @@ function Console({ me, onSignOut }: { me: { name: string; email: string }; onSig
   return (
     <div className="min-h-dvh">
       <header className="border-b border-[#1c3f52]/15 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div>
             <p className="mono text-[11px] tracking-[0.24em] text-[#0f766e] uppercase">Signed lease master</p>
             <h1 className="display text-3xl text-[#1c3f52]">Aliquot HQ</h1>
           </div>
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <EnvPicker
+              env={env}
+              onChange={onEnvChange}
+              compact
+              onSwitched={async () => {
+                await hqApi.logout().catch(() => undefined);
+                onSignOut();
+              }}
+            />
             <div className="text-right">
               <p className="font-medium">{me.name}</p>
               <p className="mono text-xs text-[#3d4f59]">{me.email}</p>
@@ -284,7 +404,9 @@ function Console({ me, onSignOut }: { me: { name: string; email: string }; onSig
         labId={openLabId}
         plans={plans}
         onClose={() => setOpenLabId(null)}
-        onChanged={reload}
+        onChanged={async () => {
+          await reload();
+        }}
       />
     </div>
   );

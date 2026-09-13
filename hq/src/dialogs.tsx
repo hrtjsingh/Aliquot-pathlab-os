@@ -57,6 +57,8 @@ export function Field({
   required,
   placeholder,
   defaultValue,
+  value,
+  onChange,
 }: {
   name: string;
   label: string;
@@ -64,6 +66,8 @@ export function Field({
   required?: boolean;
   placeholder?: string;
   defaultValue?: string;
+  value?: string;
+  onChange?: (value: string) => void;
 }) {
   return (
     <label className="text-sm font-medium">
@@ -73,7 +77,9 @@ export function Field({
         type={type}
         required={required}
         placeholder={placeholder}
-        defaultValue={defaultValue}
+        {...(value !== undefined
+          ? { value, onChange: (event) => onChange?.(event.target.value) }
+          : { defaultValue })}
         className="mt-1 w-full rounded-sm border border-[#d7dddf] bg-[#f4f6f7] px-3 py-2"
       />
     </label>
@@ -93,6 +99,18 @@ export function CreateLabDialog({
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [adminName, setAdminName] = useState("");
+  const [adminEmail, setAdminEmail] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setAdminName("");
+      setAdminEmail("");
+      setAdminPassword("");
+      setError("");
+    }
+  }, [open]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -103,12 +121,15 @@ export function CreateLabDialog({
       const lab = await hqApi.createLab({
         name: String(form.get("name")),
         slug: String(form.get("slug")),
-        adminName: String(form.get("adminName")),
-        adminEmail: String(form.get("adminEmail")),
-        adminPassword: String(form.get("adminPassword")),
+        adminName,
+        adminEmail,
+        adminPassword,
         planCode: String(form.get("planCode") || "TRIAL"),
       });
       event.currentTarget.reset();
+      setAdminName("");
+      setAdminEmail("");
+      setAdminPassword("");
       await onCreated(lab.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create lab.");
@@ -117,14 +138,44 @@ export function CreateLabDialog({
     }
   }
 
+  function prefillAdmin() {
+    setAdminName("Lab Admin");
+    setAdminEmail("admin@lab.test");
+    setAdminPassword("Password123!");
+    setError("");
+  }
+
   return (
     <Modal open={open} title="New lab" onClose={onClose}>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
         <Field name="name" label="Lab name" required />
         <Field name="slug" label="Lab ID (login slug)" required placeholder="city-lab" />
-        <Field name="adminName" label="Login name" required />
-        <Field name="adminEmail" label="Login email" type="email" required />
-        <Field name="adminPassword" label="Login password" type="password" required />
+        <Field name="adminName" label="Login name" required value={adminName} onChange={setAdminName} />
+        <Field
+          name="adminEmail"
+          label="Login email"
+          type="email"
+          required
+          value={adminEmail}
+          onChange={setAdminEmail}
+        />
+        <Field
+          name="adminPassword"
+          label="Login password"
+          type="password"
+          required
+          value={adminPassword}
+          onChange={setAdminPassword}
+        />
+        <div className="flex items-end">
+          <button
+            type="button"
+            onClick={prefillAdmin}
+            className="border border-[#0f766e]/40 px-3 py-2 text-xs font-semibold text-[#0f766e]"
+          >
+            Prefill admin details
+          </button>
+        </div>
         <label className="text-sm font-medium sm:col-span-2">
           Plan
           <select
@@ -386,25 +437,35 @@ function LoginForm({ lab, onChanged }: { lab: LabDetail; onChanged: () => Promis
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const login = lab.users.find((user) => user.active) ?? lab.users[0] ?? null;
+
+  useEffect(() => {
+    setName(login?.name ?? "");
+    setEmail(login?.email ?? "");
+    setPassword("");
+    setError("");
+    setSaved(false);
+  }, [login?.id, login?.name, login?.email]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
     setPending(true);
     setError("");
     setSaved(false);
-    const password = String(form.get("password") || "");
     try {
       const body = {
-        name: String(form.get("name")),
-        email: String(form.get("email")),
+        name,
+        email,
         ...(password ? { password } : {}),
       };
       if (login) await hqApi.updateUser(lab.id, body);
       else await hqApi.createUser(lab.id, { ...body, password: password || "" });
       await onChanged();
       setSaved(true);
+      setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save login.");
     } finally {
@@ -412,19 +473,36 @@ function LoginForm({ lab, onChanged }: { lab: LabDetail; onChanged: () => Promis
     }
   }
 
+  function prefillAdmin() {
+    setName("Lab Admin");
+    setEmail("admin@lab.test");
+    setPassword("Password123!");
+    setError("");
+    setSaved(false);
+  }
+
   return (
     <section>
       <h3 className="text-sm font-semibold">Lab login</h3>
       <p className="mt-1 text-sm text-[#3d4f59]">One account per lab. That person signs in with the lab ID.</p>
-      <form key={login?.id ?? "new"} onSubmit={submit} className="mt-3 grid gap-2">
-        <Field name="name" label="Name" required defaultValue={login?.name} />
-        <Field name="email" label="Email" type="email" required defaultValue={login?.email} />
+      <form onSubmit={submit} className="mt-3 grid gap-2">
+        <Field name="name" label="Name" required value={name} onChange={setName} />
+        <Field name="email" label="Email" type="email" required value={email} onChange={setEmail} />
         <Field
           name="password"
           label={login ? "New password (leave blank to keep)" : "Password"}
           type="password"
           required={!login}
+          value={password}
+          onChange={setPassword}
         />
+        <button
+          type="button"
+          onClick={prefillAdmin}
+          className="justify-self-start border border-[#0f766e]/40 px-3 py-1.5 text-xs font-semibold text-[#0f766e]"
+        >
+          Prefill admin details
+        </button>
         {error ? <p className="text-sm text-[#b3261e]">{error}</p> : null}
         {saved ? <p className="text-sm text-[#0f766e]">Login saved.</p> : null}
         <button

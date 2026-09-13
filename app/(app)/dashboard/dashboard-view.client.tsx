@@ -14,6 +14,7 @@ import { PriorityBadge, StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PaymentUpdateDialog } from "@/components/payment-update-dialog";
 import { CacheMiss, useDataSync } from "@/components/data-sync";
+import { useIsInstalledPwa } from "@/lib/client-pwa";
 import { STATUS_LABELS, isCustomerVisibleReport } from "@/lib/workflow";
 import { formatInr } from "@/lib/money";
 import { cancelOrder } from "@/app/actions/orders";

@@ -33,7 +33,7 @@ export async function ensureHqSeed() {
   const passwordHash = await bcrypt.hash(HQ_PASSWORD, 10);
   await hqPrisma.superAdmin.upsert({
     where: { email: HQ_EMAIL },
-    update: { name: "Aliquot HQ", active: true },
+    update: { name: "Aliquot HQ", active: true, passwordHash },
     create: { email: HQ_EMAIL, name: "Aliquot HQ", passwordHash },
   });
 

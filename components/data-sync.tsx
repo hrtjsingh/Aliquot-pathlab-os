@@ -22,6 +22,7 @@ import { readSnapshot, writeSnapshot } from "@/lib/offline/cache";
 import { listOutbox } from "@/lib/offline/outbox";
 import { flushOutbox } from "@/lib/offline/sync";
 import { cn } from "@/lib/utils";
+import { isInstalledPwa, useIsInstalledPwa } from "@/lib/client-pwa";
 
 const LOGIN_SYNC_FLAG = "aliquot-sync-on-login";
 
@@ -282,6 +283,8 @@ export function DataSyncProvider({
 
   const syncNow = useCallback(async (options?: { auto?: boolean }) => {
     if (syncingRef.current) return;
+    // Cloud / offline sync is for the installed PWA (or Electron), not live web tabs.
+    if (!isInstalledPwa()) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
       if (!options?.auto) toast.error("You’re offline. Connect, then tap Sync.");
       return;
@@ -395,8 +398,11 @@ function formatSynced(iso: string | null) {
 }
 
 export function SyncControl({ compact = false }: { compact?: boolean }) {
+  const isPwa = useIsInstalledPwa();
   const { lastSyncedAt, queued, syncing, syncNow } = useDataSync();
   const tooltipText = formatSynced(lastSyncedAt);
+
+  if (!isPwa) return null;
 
   return (
     <TooltipProvider>

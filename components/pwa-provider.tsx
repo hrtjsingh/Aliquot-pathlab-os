@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useOffline } from "next/offline";
 import { WifiOff } from "lucide-react";
 import { listOutbox } from "@/lib/offline/outbox";
+import { useIsInstalledPwa } from "@/lib/client-pwa";
 
 export function PwaProvider({ children }: { children: ReactNode }) {
   return (
@@ -15,6 +16,7 @@ export function PwaProvider({ children }: { children: ReactNode }) {
 }
 
 function PwaRuntime() {
+  const isPwa = useIsInstalledPwa();
   const frameworkOffline = useOffline();
   const [browserOffline, setBrowserOffline] = useState(false);
   const isOffline = frameworkOffline || browserOffline;
@@ -41,10 +43,15 @@ function PwaRuntime() {
       });
       return;
     }
+    // Register SW in the browser so the app can be installed; offline UX only runs when launched as PWA.
     void navigator.serviceWorker.register("/sw.js");
   }, []);
 
   useEffect(() => {
+    if (!isPwa) {
+      setQueued(0);
+      return;
+    }
     function refreshCount() {
       void listOutbox()
         .then((items) => setQueued(items.length))
@@ -53,8 +60,9 @@ function PwaRuntime() {
     refreshCount();
     window.addEventListener("aliquot-outbox", refreshCount);
     return () => window.removeEventListener("aliquot-outbox", refreshCount);
-  }, []);
+  }, [isPwa]);
 
+  if (!isPwa) return null;
   if (!isOffline && queued === 0) return null;
 
   return (
@@ -66,9 +74,9 @@ function PwaRuntime() {
           <p className="text-xs text-muted-foreground">
             {isOffline
               ? queued > 0
-                ? `${queued} change${queued === 1 ? "" : "s"} waiting. Tap Sync in the sidebar when you’re back online.`
+                ? `${queued} change${queued === 1 ? "" : "s"} waiting. Tap Sync in the menu when you’re back online.`
                 : "Pages you already opened stay available. New saves wait in the queue until you tap Sync."
-              : `${queued} change${queued === 1 ? "" : "s"} waiting. Tap Sync in the sidebar to send them and refresh lab data.`}
+              : `${queued} change${queued === 1 ? "" : "s"} waiting. Tap Sync in the menu to send them and refresh lab data.`}
           </p>
         </div>
       </div>

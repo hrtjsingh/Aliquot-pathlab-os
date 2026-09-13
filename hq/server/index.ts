@@ -10,10 +10,10 @@ import { Role, SubscriptionStatus } from "@prisma/client";
 import { formatPlanTerm, planExpiresAt, planIsTrial } from "../../lib/billing-plans.ts";
 import { buildLeasePayload, signLease } from "../../lib/license-crypto.ts";
 import { clearSessionCookie, requireHq, setSessionCookie, type Env } from "./auth.ts";
-import { hqPrisma } from "./db.ts";
-import { HQ_ORIGIN, HQ_PORT, HQ_ROOT } from "./env.ts";
+import { hqPrisma, getHqDbInfo, switchHqDbTarget } from "./db.ts";
+import { HQ_ORIGIN, HQ_PORT, HQ_ROOT, type HqDbTarget } from "./env.ts";
 import { loadOrCreateHqKeys } from "./license-keys.ts";
-import { ensureHqSeed } from "./seed.ts";
+import { ensureHqSeed, HQ_EMAIL, HQ_PASSWORD } from "./seed.ts";
 
 const app = new Hono<Env>();
 
@@ -94,6 +94,31 @@ app.post("/api/auth/login", async (c) => {
   if (!ok) return c.json({ error: "Those HQ credentials are not recognised." }, 401);
   setSessionCookie(c, { id: admin.id, email: admin.email, name: admin.name });
   return c.json({ id: admin.id, email: admin.email, name: admin.name });
+});
+
+app.get("/api/env", (c) =>
+  c.json({
+    ...getHqDbInfo(),
+    prefill: { email: HQ_EMAIL, password: HQ_PASSWORD, name: "Aliquot HQ" },
+  })
+);
+
+app.post("/api/env", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { target?: string } | null;
+  const target = body?.target?.trim().toLowerCase();
+  if (target !== "cloud" && target !== "local") {
+    return c.json({ error: "Choose cloud or local." }, 400);
+  }
+  try {
+    const info = await switchHqDbTarget(target as HqDbTarget);
+    await ensureHqSeed();
+    return c.json({
+      ...info,
+      prefill: { email: HQ_EMAIL, password: HQ_PASSWORD, name: "Aliquot HQ" },
+    });
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : "Could not switch database." }, 400);
+  }
 });
 
 app.post("/api/auth/logout", (c) => {
@@ -552,10 +577,12 @@ if (existsSync(distDir)) {
 }
 
 async function main() {
+  const info = getHqDbInfo();
   await ensureHqSeed();
-  serve({ fetch: app.fetch, port: HQ_PORT, hostname: "127.0.0.1" }, (info) => {
-    console.log(`Aliquot HQ API http://127.0.0.1:${info.port}`);
-    console.log("HQ login: hq@aliquot.test / Password123!");
+  serve({ fetch: app.fetch, port: HQ_PORT, hostname: "127.0.0.1" }, (infoPort) => {
+    console.log(`Aliquot HQ API http://127.0.0.1:${infoPort.port}`);
+    console.log(`Database: ${info.label} · ${info.host}`);
+    console.log(`HQ login: ${HQ_EMAIL} / ${HQ_PASSWORD}`);
     console.log("UI: npm run dev:ui  →  http://127.0.0.1:5174");
   });
 }

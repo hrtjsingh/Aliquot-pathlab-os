@@ -48,7 +48,11 @@ export type OutboxItem = {
   op: OutboxOp;
 };
 
+import { isInstalledPwa } from "@/lib/client-pwa";
+
 export function isBrowserOffline() {
+  // Offline queue is PWA/desktop only — live web stays online-only.
+  if (!isInstalledPwa()) return false;
   return typeof navigator !== "undefined" && navigator.onLine === false;
 }
 

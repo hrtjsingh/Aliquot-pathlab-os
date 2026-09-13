@@ -72,6 +72,14 @@ export type Overview = {
   }>;
 };
 
+export type HqEnvInfo = {
+  target: "cloud" | "local";
+  label: string;
+  host: string;
+  available: { cloud: boolean; local: boolean };
+  prefill: { email: string; password: string; name: string };
+};
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
@@ -82,6 +90,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const hqApi = {
+  env: () => api<HqEnvInfo>("/api/env"),
+  setEnv: (target: "cloud" | "local") =>
+    api<HqEnvInfo>("/api/env", { method: "POST", body: JSON.stringify({ target }) }),
   me: () => api<HqUser>("/api/me"),
   login: (email: string, password: string) =>
     api<HqUser>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
