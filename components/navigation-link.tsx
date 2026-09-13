@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useLinkStatus } from "next/link";
 import { type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { useReportLinkPending } from "@/components/page-loader";
 
 interface NavigationLinkProps {
@@ -13,6 +12,8 @@ interface NavigationLinkProps {
   className?: string;
   active?: boolean;
   onClick?: () => void;
+  "aria-label"?: string;
+  title?: string;
 }
 
 function NavStatus({ children }: { children: ReactNode }) {
@@ -22,18 +23,17 @@ function NavStatus({ children }: { children: ReactNode }) {
   return (
     <>
       {children}
-      <Loader2
-        aria-hidden
-        className={cn(
-          "ml-auto size-3.5 shrink-0 text-accent transition-opacity",
-          pending ? "animate-spin opacity-100" : "opacity-0"
-        )}
-      />
+      {pending ? (
+        <Loader2
+          aria-hidden
+          className="ml-auto size-3.5 shrink-0 animate-spin text-accent"
+        />
+      ) : null}
     </>
   );
 }
 
-export function NavigationLink({ href, children, className, active, onClick }: NavigationLinkProps) {
+export function NavigationLink({ href, children, className, active, onClick, "aria-label": ariaLabel, title }: NavigationLinkProps) {
   return (
     <Link
       href={href as never}
@@ -41,6 +41,8 @@ export function NavigationLink({ href, children, className, active, onClick }: N
       onClick={onClick}
       className={className}
       aria-current={active ? "page" : undefined}
+      aria-label={ariaLabel}
+      title={title}
     >
       <NavStatus>{children}</NavStatus>
     </Link>

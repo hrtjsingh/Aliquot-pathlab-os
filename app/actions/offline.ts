@@ -37,6 +37,10 @@ export type LabSnapshot = {
     priority: string;
     patient: { firstName: string; lastName: string | null; phone: string | null };
     testCount: number;
+    totalCharge?: number;
+    discount?: number;
+    amountPaid?: number;
+    due?: number;
   }>;
   dashboard: {
     sampleReceived: number;
@@ -197,14 +201,24 @@ export async function getLabSnapshot(): Promise<LabSnapshot> {
       ...test,
       price: asMoney(test.price),
     })),
-    worklist: worklist.map((order) => ({
-      id: order.id,
-      accessionNo: order.accessionNo,
-      status: order.status,
-      priority: order.priority,
-      patient: order.patient,
-      testCount: order.orderTests.length,
-    })),
+    worklist: worklist.map((order) => {
+      const money = billing.get(order.id) ?? { totalCharge: 0, discount: 0, amountPaid: 0 };
+      const totalCharge = money.totalCharge;
+      const discount = money.discount;
+      const amountPaid = money.amountPaid;
+      return {
+        id: order.id,
+        accessionNo: order.accessionNo,
+        status: order.status,
+        priority: order.priority,
+        patient: order.patient,
+        testCount: order.orderTests.length,
+        totalCharge,
+        discount,
+        amountPaid,
+        due: dueAmount(totalCharge, discount, amountPaid),
+      };
+    }),
     dashboard: {
       sampleReceived: counts[0],
       resultEntry: counts[1],

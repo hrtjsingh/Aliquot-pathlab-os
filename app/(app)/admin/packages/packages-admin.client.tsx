@@ -73,7 +73,8 @@ function PanelForm({
 
   function toggle(id: string) {
     const next = new Set(selected);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     setSelected(next);
   }
 
@@ -176,10 +177,10 @@ export function PackagesAdmin({ panels, tests }: { panels: PanelRow[]; tests: Ca
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative min-w-[16rem] flex-1">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full lg:w-1/2 lg:max-w-md">
           <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
-          <Input className="pl-8" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search packages" />
+          <Input className="w-full pl-8" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search packages" />
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>

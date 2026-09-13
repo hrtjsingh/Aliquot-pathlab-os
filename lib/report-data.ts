@@ -85,6 +85,7 @@ export function toReportData(order: {
         unit: r.unit,
         referenceRangeText: r.referenceRangeText,
         flag: r.flag,
+        isDerived: r.isDerived,
         pathologistNote: r.pathologistNote,
         grossDescription: r.grossDescription,
         microscopicDescription: r.microscopicDescription,

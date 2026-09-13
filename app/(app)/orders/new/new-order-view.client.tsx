@@ -10,7 +10,7 @@ export function NewOrderView({ initialPatientId }: { initialPatientId?: string }
   if (!snapshot) return <CacheMiss loading={<NewOrderLoading />} />;
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="New order"
         description="Select a patient, add packages or tests, set discount and payment. An accession number is generated when you confirm."

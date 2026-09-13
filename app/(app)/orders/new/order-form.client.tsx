@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Search } from "lucide-react";
@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { PatientRegisterDialog } from "@/app/(app)/patients/patient-register-dialog";
 import { useDataSync } from "@/components/data-sync";
 import { createOrder } from "@/app/actions/orders";
@@ -81,7 +80,11 @@ export function OrderForm({
 }) {
   const router = useRouter();
   const { patchSnapshot } = useDataSync();
-  const [patients, setPatients] = useState(initialPatients);
+  const [addedPatients, setAddedPatients] = useState<Patient[]>([]);
+  const patients = useMemo(() => {
+    const ids = new Set(initialPatients.map((patient) => patient.id));
+    return [...initialPatients, ...addedPatients.filter((patient) => !ids.has(patient.id))];
+  }, [initialPatients, addedPatients]);
   const [patientId, setPatientId] = useState(initialPatientId ?? "");
   const [patientQuery, setPatientQuery] = useState("");
   const [catalogQuery, setCatalogQuery] = useState("");
@@ -93,13 +96,6 @@ export function OrderForm({
   const [discount, setDiscount] = useState(String(initialDiscount ?? 0));
   const [amountPaid, setAmountPaid] = useState(String(initialPaid ?? 0));
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setPatients((prev) => {
-      const ids = new Set(initialPatients.map((patient) => patient.id));
-      return [...initialPatients, ...prev.filter((patient) => !ids.has(patient.id))];
-    });
-  }, [initialPatients]);
 
   const selectedPatient = patients.find((p) => p.id === patientId);
   const categories = useMemo(
@@ -301,13 +297,13 @@ export function OrderForm({
             <Label htmlFor="patient">Patient</Label>
             <PatientRegisterDialog
               onRegistered={(patient) => {
-                setPatients((prev) => [patient, ...prev]);
+                setAddedPatients((prev) => [patient, ...prev]);
                 setPatientId(patient.id);
               }}
             />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative min-w-[16rem] flex-[2]">
+            <div className="relative min-w-0 flex-[2] sm:min-w-[400px]">
               <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
               <Input
                 className="pl-8"
@@ -319,7 +315,7 @@ export function OrderForm({
             </div>
             <NativeSelect
               id="patient"
-              className="w-full min-w-[12rem] flex-1"
+              className="w-full min-w-0 sm:min-w-[12rem] flex-1"
               value={patientId}
               onChange={(e) => setPatientId(e.target.value)}
             >
@@ -338,14 +334,9 @@ export function OrderForm({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
       <div className="flex flex-col gap-4 lg:col-span-2">
-        {!onSubmitOrder ? (
-          <InstructionAlert title="Build the accession">
-            Search the catalog, add a package at its package rate, then pick extra tests. Calculated tests pull in their input tests automatically. Confirm the bill on the right.
-          </InstructionAlert>
-        ) : null}
 
-        <div className="flex flex-col gap-2">
-          <div className="relative w-full min-w-[16rem]">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1 sm:min-w-[400px]">
             <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
             <Input
               className="pl-8"

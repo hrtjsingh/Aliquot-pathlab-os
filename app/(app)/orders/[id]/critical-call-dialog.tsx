@@ -8,7 +8,6 @@ import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbo
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { InstructionAlert } from "@/components/instruction-alert";
 import {
   Dialog,
   DialogContent,
@@ -57,50 +56,51 @@ export function CriticalCallDialog({ orderId, accessionNo }: { orderId: string; 
   }
 
   return (
-    <InstructionAlert variant="destructive" title="Critical value. Call-back required." className="items-start">
-      <div className="flex flex-col gap-3">
-        <p>
+    <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm flex flex-col gap-3">
+      <div>
+        <p className="font-semibold text-destructive">Critical value. Call-back required.</p>
+        <p className="text-muted-foreground mt-0.5">
           Accession {accessionNo} has a critical result. Notify the clinician, then log who you spoke with before verification can continue.
         </p>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button variant="destructive" className="w-fit" type="button">
-              Log call-back
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Log critical value call-back</DialogTitle>
-              <DialogDescription>
-                Record the person notified, how you reached them, and that the result was read back.
-              </DialogDescription>
-            </DialogHeader>
-            <form action={submit} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="notifiedName">Clinician or nurse notified</Label>
-                <Input id="notifiedName" name="notifiedName" required />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="notifiedRole">Role</Label>
-                <Input id="notifiedRole" name="notifiedRole" placeholder="Attending physician" />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="contactMethod">Contact method</Label>
-                <Input id="contactMethod" name="contactMethod" defaultValue="Phone" />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="confirmationNote">Confirmation note</Label>
-                <Input id="confirmationNote" name="confirmationNote" placeholder="Read back and confirmed" />
-              </div>
-              <DialogFooter>
-                <Button type="submit" variant="destructive" disabled={pending}>
-                  {pending ? "Saving…" : "Save call-back"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
       </div>
-    </InstructionAlert>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button variant="destructive" className="w-fit" type="button">
+            Log call-back
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Log critical value call-back</DialogTitle>
+            <DialogDescription>
+              Record the person notified, how you reached them, and that the result was read back.
+            </DialogDescription>
+          </DialogHeader>
+          <form action={submit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="notifiedName">Clinician or nurse notified</Label>
+              <Input id="notifiedName" name="notifiedName" required />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="notifiedRole">Role</Label>
+              <Input id="notifiedRole" name="notifiedRole" placeholder="Attending physician" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="contactMethod">Contact method</Label>
+              <Input id="contactMethod" name="contactMethod" defaultValue="Phone" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="confirmationNote">Confirmation note</Label>
+              <Input id="confirmationNote" name="confirmationNote" placeholder="Read back and confirmed" />
+            </div>
+            <DialogFooter>
+              <Button type="submit" variant="destructive" disabled={pending}>
+                {pending ? "Saving…" : "Save call-back"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

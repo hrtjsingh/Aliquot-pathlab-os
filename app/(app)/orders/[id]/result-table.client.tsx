@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -45,9 +45,6 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(rows.map((r) => [r.testId, r.numericValue != null ? String(r.numericValue) : (r.textValue ?? "")]))
   );
-  const [ranges, setRanges] = useState<Record<string, string>>(
-    Object.fromEntries(rows.map((r) => [r.testId, r.referenceRangeText ?? ""]))
-  );
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
@@ -61,11 +58,30 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
     return Array.from(map.entries());
   }, [rows]);
 
-  function commit(row: ResultRow, raw: string, rangeText: string) {
+  function focusAdjacentResult(current: HTMLInputElement, direction: 1 | -1) {
+    const root = current.closest("table");
+    if (!root) return;
+    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[data-result-input="true"]:not(:disabled)'));
+    const index = inputs.indexOf(current);
+    const next = inputs[index + direction];
+    if (next) {
+      next.focus();
+      next.select();
+      return;
+    }
+    current.blur();
+  }
+
+  function onResultKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    focusAdjacentResult(event.currentTarget, event.shiftKey ? -1 : 1);
+  }
+
+  function commit(row: ResultRow, raw: string) {
     if (row.isDerived) return;
     const previous = row.numericValue != null ? String(row.numericValue) : (row.textValue ?? "");
-    const previousRange = row.referenceRangeText ?? "";
-    if (raw === previous && rangeText.trim() === previousRange.trim()) return;
+    if (raw === previous) return;
 
     setPendingId(row.testId);
     startTransition(async () => {
@@ -75,7 +91,7 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
         testId: row.testId,
         numericValue: isNumeric ? (raw.trim() === "" ? null : Number(raw)) : null,
         textValue: !isNumeric ? raw : null,
-        referenceRangeText: rangeText.trim() || null,
+        referenceRangeText: row.referenceRangeText,
       };
       try {
         if (isBrowserOffline()) {
@@ -120,7 +136,7 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
             </TableRow>
             {group.map((row) => {
               const raw = values[row.testId] ?? "";
-              const rangeText = ranges[row.testId] ?? "";
+              const rangeText = row.referenceRangeText ?? "";
               const numeric = row.dataType === "NUMERIC" && raw.trim() !== "" ? Number(raw) : row.numericValue;
               const liveFlag = editable && row.dataType === "NUMERIC" ? previewFlag(numeric, rangeText) : row.flag;
               const flag = FLAG_BADGE[liveFlag] ?? FLAG_BADGE.NORMAL;
@@ -144,15 +160,19 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
                   </TableCell>
                   <TableCell className="w-40">
                     {row.isDerived ? (
-                      <span className="tabular text-sm font-medium">{row.numericValue ?? "—"}</span>
+                      <span className="tabular text-sm font-medium">
+                        {row.numericValue != null ? row.numericValue.toFixed(2) : "—"}
+                      </span>
                     ) : editable ? (
                       <Input
                         className="tabular h-8 w-32"
                         aria-label={`${row.name} result`}
+                        data-result-input="true"
                         value={raw}
                         disabled={pendingId === row.testId}
                         onChange={(e) => setValues((v) => ({ ...v, [row.testId]: e.target.value }))}
-                        onBlur={(e) => commit(row, e.target.value, rangeText)}
+                        onKeyDown={onResultKeyDown}
+                        onBlur={(e) => commit(row, e.target.value)}
                       />
                     ) : (
                       <span className="tabular text-sm">{row.numericValue ?? row.textValue ?? "—"}</span>
@@ -160,18 +180,7 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{row.unit}</TableCell>
                   <TableCell className="w-44">
-                    {editable ? (
-                      <Input
-                        className="tabular h-8"
-                        aria-label={`${row.name} reference range`}
-                        value={rangeText}
-                        disabled={pendingId === row.testId}
-                        onChange={(e) => setRanges((v) => ({ ...v, [row.testId]: e.target.value }))}
-                        onBlur={(e) => commit(row, raw, e.target.value)}
-                      />
-                    ) : (
-                      <span className="tabular text-xs text-muted-foreground">{row.referenceRangeText ?? "—"}</span>
-                    )}
+                    <span className="tabular text-xs text-muted-foreground">{rangeText || "—"}</span>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">

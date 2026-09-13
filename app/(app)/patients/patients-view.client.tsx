@@ -2,14 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { FlaskConical, Search, Users } from "lucide-react";
+import { FlaskConical, History, Search, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { CacheMiss, useDataSync } from "@/components/data-sync";
 import { PatientRegisterDialog } from "./patient-register-dialog";
 import PatientsLoading from "./loading";
@@ -30,23 +29,18 @@ export function PatientsView() {
       );
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="Patients"
         description="Master patient registry. Register a new patient, then create an accession from their row."
         actions={<PatientRegisterDialog />}
-        hint={
-          <InstructionAlert title="How registration works">
-            Choose Mr, Mrs, or Miss, then enter name, age, and gender. Title fills gender; you can still change it. An MRN is assigned automatically after you save, and Aliquot opens New Order with this patient selected.
-          </InstructionAlert>
-        }
       />
 
       {patients.length > 0 ? (
-        <div className="relative min-w-[16rem] w-full">
+        <div className="relative w-full lg:w-1/2 lg:max-w-md">
           <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
           <Input
-            className="pl-8"
+            className="w-full pl-8"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search name, MRN, or phone"
@@ -92,12 +86,20 @@ export function PatientsView() {
                     <TableCell>{patient.gender}</TableCell>
                     <TableCell className="tabular">{patient.ageYears ?? "—"}</TableCell>
                     <TableCell className="text-right">
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/orders/new?patientId=${patient.id}` as never}>
-                          <FlaskConical />
-                          New order
-                        </Link>
-                      </Button>
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/orders/new?patientId=${patient.id}` as never}>
+                            <FlaskConical />
+                            New order
+                          </Link>
+                        </Button>
+                        <Button asChild size="sm" variant="ghost">
+                          <Link href={`/patients/${patient.id}` as never}>
+                            <History />
+                            History
+                          </Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

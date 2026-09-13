@@ -16,7 +16,7 @@ const KPI_LABELS = [
 
 export default function DashboardLoading() {
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="Dashboard"
         description="Lab-wide status at a glance. Open the worklist for today's queue."
@@ -29,7 +29,7 @@ export default function DashboardLoading() {
         hint={<SkeletonHint />}
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
         {KPI_LABELS.map((label) => (
           <SkeletonKpiCard key={label} label={label} />
         ))}

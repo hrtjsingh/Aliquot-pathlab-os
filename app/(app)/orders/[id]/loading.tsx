@@ -1,13 +1,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { SkeletonPageHeader, SkeletonTable } from "@/components/page-skeleton";
 
 const STEPS = ["Created", "Collected", "Received", "Results", "Verified", "Authorized", "Released", "Sent"];
 
 export default function OrderDetailLoading() {
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <SkeletonPageHeader
         titleWidth="w-48"
         descriptionWidth="w-72"
@@ -28,10 +27,6 @@ export default function OrderDetailLoading() {
           </li>
         ))}
       </ol>
-
-      <InstructionAlert title="Next step">
-        <Skeleton className="h-3 w-80 max-w-full" />
-      </InstructionAlert>
 
       <Skeleton className="h-9 w-40 rounded-md" />
 

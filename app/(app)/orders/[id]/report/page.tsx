@@ -4,10 +4,10 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, Download, ExternalLink } from "lucide-react";
+import { HandoverActions } from "../handover-actions.client";
 import { RemoveReportButton } from "../remove-report-button";
 import { ensurePublicReportToken, publicReportPath } from "@/lib/public-report";
 import { PageHeader } from "@/components/page-header";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { StatusBadge } from "@/components/status-badge";
 import { isCustomerVisibleReport } from "@/lib/workflow";
 
@@ -25,7 +25,7 @@ export default async function ReportPreviewPage({ params }: { params: Promise<{ 
   const patientName = `${order.patient.firstName} ${order.patient.lastName ?? ""}`.trim();
 
   return (
-    <div className="mx-auto flex h-full min-h-[calc(100dvh-4rem)] w-full max-w-6xl flex-col gap-4 p-6">
+    <div className="mx-auto flex h-full min-h-[calc(100dvh-4rem)] w-full min-w-0 max-w-7xl flex-col gap-4 p-6">
       <PageHeader
         title="Lab report preview"
         description={`${order.accessionNo} · ${patientName} · MRN ${order.patient.mrn}`}
@@ -38,6 +38,13 @@ export default async function ReportPreviewPage({ params }: { params: Promise<{ 
                 Back to order
               </Button>
             </Link>
+            <HandoverActions
+              orderId={id}
+              accessionNo={order.accessionNo}
+              phone={order.patient.phone}
+              status={order.status}
+              size="sm"
+            />
             {user.role === "ADMIN" && order.status === "RELEASED" ? (
               <RemoveReportButton orderId={id} accessionNo={order.accessionNo} afterHref={`/orders/${id}`} />
             ) : null}
@@ -56,11 +63,6 @@ export default async function ReportPreviewPage({ params }: { params: Promise<{ 
           </>
         }
       />
-
-      <InstructionAlert title="Internal workspace">
-        This is the lab preview inside Aliquot. Patients who scan the QR on the PDF land on a separate public page, not
-        this screen.
-      </InstructionAlert>
 
       <div className="grid gap-3 rounded-lg border border-border bg-card p-4 text-sm sm:grid-cols-4">
         <div>

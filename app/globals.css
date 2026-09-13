@@ -31,6 +31,13 @@
   --success: #1e6e46;
   --success-foreground: #ffffff;
 
+  /* Diagnostic range tokens */
+  --abnormal-high: #c2410c;
+  --abnormal-low: #0284c7;
+  --panic-bg: #fef2f2;
+  --panic-border: #f87171;
+  --panic-text: #991b1b;
+
   --border: #d7dddf;
   --input: #d7dddf;
   --ring: #0f766e;
@@ -69,6 +76,14 @@
   --warning-foreground: #0c1216;
   --success: #4ade80;
   --success-foreground: #0c1216;
+
+  /* Diagnostic range tokens dark */
+  --abnormal-high: #fb923c;
+  --abnormal-low: #38bdf8;
+  --panic-bg: #2c0b0e;
+  --panic-border: #991b1b;
+  --panic-text: #fca5a5;
+
   --border: #2a353c;
   --input: #2a353c;
   --ring: #2dd4bf;
@@ -102,6 +117,11 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-abnormal-high: var(--abnormal-high);
+  --color-abnormal-low: var(--abnormal-low);
+  --color-panic-bg: var(--panic-bg);
+  --color-panic-border: var(--panic-border);
+  --color-panic-text: var(--panic-text);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -167,8 +187,21 @@
   }
 }
 
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
 @utility animate-route-bar {
   animation: route-bar 1s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+
+@utility animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .sample-track {

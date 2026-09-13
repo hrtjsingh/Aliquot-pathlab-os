@@ -150,7 +150,7 @@ export function PatientRegisterDialog({
           {onRegistered ? "New patient" : "Register patient"}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{onRegistered ? "New patient" : "Register patient"}</DialogTitle>
           <DialogDescription>

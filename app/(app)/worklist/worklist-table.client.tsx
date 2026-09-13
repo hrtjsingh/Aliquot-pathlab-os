@@ -12,7 +12,7 @@ import { transitionOrderStatus } from "@/app/actions/orders";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { HandoverActions } from "@/app/(app)/orders/[id]/handover-actions.client";
 import { isHandoverDone } from "@/lib/workflow";
-import { ClipboardList } from "lucide-react";
+import { ArrowRight, ClipboardList } from "lucide-react";
 
 type WorklistOrder = {
   id: string;
@@ -88,6 +88,7 @@ export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
       <TableBody>
         {orders.map((o) => {
           const next = NEXT[o.status];
+
           return (
             <TableRow key={o.id}>
               <TableCell className="tabular text-xs">{o.accessionNo}</TableCell>
@@ -102,7 +103,7 @@ export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
                 <StatusBadge status={o.status} />
               </TableCell>
               <TableCell>
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
                   {o.status === "RELEASED" ? (
                     <HandoverActions
                       orderId={o.id}
@@ -145,7 +146,10 @@ export function WorklistTable({ orders }: { orders: WorklistOrder[] }) {
                     />
                   ) : null}
                   <Button asChild size="sm">
-                    <Link href={`/orders/${o.id}` as never}>Open</Link>
+                    <Link href={`/orders/${o.id}` as never}>
+                      Open
+                      <ArrowRight />
+                    </Link>
                   </Button>
                 </div>
               </TableCell>

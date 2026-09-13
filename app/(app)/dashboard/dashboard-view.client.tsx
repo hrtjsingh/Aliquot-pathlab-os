@@ -1,18 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ban, ClipboardList, FileText, FlaskConical, Receipt, Search } from "lucide-react";
+import { Ban, ClipboardList, FileText, FlaskConical, Pencil, Receipt, Search } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { PriorityBadge, StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { PaymentUpdateDialog } from "@/components/payment-update-dialog";
 import { CacheMiss, useDataSync } from "@/components/data-sync";
 import { STATUS_LABELS, isCustomerVisibleReport } from "@/lib/workflow";
 import { formatInr } from "@/lib/money";
@@ -48,11 +48,15 @@ function canCancel(status: string) {
 
 export function DashboardView() {
   const router = useRouter();
-  const { snapshot, patchSnapshot } = useDataSync();
+  const { snapshot, patchSnapshot, syncNow } = useDataSync();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof BOOKING_STATUSES)[number]>("ALL");
   const [from, setFrom] = useState(todayIso);
   const [to, setTo] = useState(todayIso);
+
+  useEffect(() => {
+    void syncNow({ auto: true });
+  }, [syncNow]);
 
   if (!snapshot) return <CacheMiss loading={<DashboardLoading />} />;
 
@@ -99,7 +103,7 @@ export function DashboardView() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="Dashboard"
         description="Bookings, collection, and lab-wide status. Open an accession to enter results or print a bill."
@@ -119,59 +123,59 @@ export function DashboardView() {
             </Button>
           </>
         }
-        hint={
-          <InstructionAlert
-            variant={criticalOpen > 0 ? "destructive" : "info"}
-            title={criticalOpen > 0 ? "Critical values need attention" : "Start of shift"}
-          >
-            {criticalOpen > 0
-              ? `${criticalOpen} open critical value${criticalOpen === 1 ? "" : "s"} are not yet released. Open those orders, log the clinician call-back, then continue verification.`
-              : "Collection cards follow the date and status filters below. Use Today for the current counter, or All dates for the last 250 accessions."}
-          </InstructionAlert>
-        }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
         {STATUSES.map((status, i) => (
-          <Link key={status} href={"/worklist" as never} className="block">
-            <Card className="h-full transition-colors hover:border-accent/40">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-medium text-muted-foreground">
-                  {status === "RELEASED" ? "Ready to send" : STATUS_LABELS[status]}
+          <Link key={status} href={"/worklist" as never} className="block min-w-0">
+            <Card className="h-full border-t-2 border-t-accent/40 transition-all hover:border-t-accent hover:shadow-sm">
+              <CardHeader className="pb-1 pt-3 px-3.5">
+                <CardTitle className="text-[11px] font-semibold leading-snug text-muted-foreground uppercase tracking-wider">
+                  {status === "RELEASED"
+                    ? "Ready to send"
+                    : status === "TECH_VERIFIED"
+                      ? "Verified"
+                      : status === "AUTHORIZED"
+                        ? "Authorized"
+                        : status === "RESULT_ENTRY"
+                          ? "Results"
+                          : status === "SAMPLE_RECEIVED"
+                            ? "Received"
+                            : STATUS_LABELS[status]}
                 </CardTitle>
               </CardHeader>
-              <CardContent className="pt-0">
-                <p className="text-2xl font-semibold tabular">{counts[i]}</p>
+              <CardContent className="pt-0 px-3.5 pb-3">
+                <p className="text-2xl font-bold tabular text-foreground">{counts[i]}</p>
               </CardContent>
             </Card>
           </Link>
         ))}
-        <Card className={cn(criticalOpen > 0 && "border-destructive")}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Open critical</CardTitle>
+        <Card className={cn("border-t-2", criticalOpen > 0 ? "border-t-destructive bg-destructive/5" : "border-t-muted")}>
+          <CardHeader className="pb-1 pt-3 px-3.5">
+            <CardTitle className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Open critical</CardTitle>
           </CardHeader>
-          <CardContent className="pt-0">
-            <p className={cn("text-2xl font-semibold tabular", criticalOpen > 0 && "text-destructive")}>{criticalOpen}</p>
+          <CardContent className="pt-0 px-3.5 pb-3">
+            <p className={cn("text-2xl font-bold tabular", criticalOpen > 0 ? "text-destructive" : "text-foreground")}>{criticalOpen}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Released today</CardTitle>
+        <Card className="border-t-2 border-t-success/50">
+          <CardHeader className="pb-1 pt-3 px-3.5">
+            <CardTitle className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Released today</CardTitle>
           </CardHeader>
-          <CardContent className="pt-0">
-            <p className="text-2xl font-semibold tabular">{dashboard.releasedToday}</p>
+          <CardContent className="pt-0 px-3.5 pb-3">
+            <p className="text-2xl font-bold tabular text-foreground">{dashboard.releasedToday}</p>
           </CardContent>
         </Card>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {collectionCards.map((card) => (
-          <Card key={card.label} className={cn(card.warn && "border-destructive")}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground">{card.label}</CardTitle>
+          <Card key={card.label} className={cn("min-w-0 border-t-2", card.warn ? "border-t-destructive bg-destructive/5" : "border-t-primary/30")}>
+            <CardHeader className="pb-1 pt-3 px-3.5">
+              <CardTitle className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{card.label}</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0">
-              <p className={cn("text-xl font-semibold tabular", card.warn && "text-destructive")}>{card.value}</p>
+            <CardContent className="pt-0 px-3.5 pb-3">
+              <p className={cn("text-xl font-bold tabular", card.warn ? "text-destructive" : "text-foreground")}>{card.value}</p>
             </CardContent>
           </Card>
         ))}
@@ -183,50 +187,82 @@ export function DashboardView() {
           <CardDescription>Filter by date, status, or patient. Print a bill, open the report, or cancel before verification.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-col gap-2">
-            <div className="relative w-full min-w-[400px]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative w-full lg:w-1/2 lg:max-w-md">
               <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
               <Input
-                className="pl-8"
+                className="w-full pl-8"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search name, accession, or phone"
                 aria-label="Search bookings"
               />
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <NativeSelect
-              className="w-full sm:w-44 sm:shrink-0"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-              aria-label="Filter by status"
-            >
-              {BOOKING_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {status === "ALL" ? "All statuses" : STATUS_LABELS[status as OrderStatus] ?? status}
-                </option>
-              ))}
-            </NativeSelect>
-            <Input
-              className="w-full sm:w-40 sm:shrink-0"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              aria-label="From date"
-            />
-            <Input
-              className="w-full sm:w-40 sm:shrink-0"
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              aria-label="To date"
-            />
-            <Button type="button" variant="outline" onClick={() => { setFrom(todayIso()); setTo(todayIso()); }}>
-              Today
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => { setFrom(""); setTo(""); setStatusFilter("ALL"); setQuery(""); }}>
-              All
-            </Button>
+
+            <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+              <NativeSelect
+                className="w-full sm:w-36 shrink-0"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+                aria-label="Filter by status"
+              >
+                {BOOKING_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "ALL" ? "All statuses" : STATUS_LABELS[status as OrderStatus] ?? status}
+                  </option>
+                ))}
+              </NativeSelect>
+
+              <Input
+                className="w-full sm:w-36 shrink-0"
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                aria-label="From date"
+              />
+
+              <Input
+                className="w-full sm:w-36 shrink-0"
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                aria-label="To date"
+              />
+
+              <div className="inline-flex h-9 items-center rounded-lg border border-border/80 bg-secondary/60 p-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFrom(todayIso());
+                    setTo(todayIso());
+                  }}
+                  className={cn(
+                    "inline-flex h-7 items-center justify-center rounded-md px-3 text-xs font-medium transition-all duration-150",
+                    from === todayIso() && to === todayIso()
+                      ? "bg-card text-foreground font-semibold shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFrom("");
+                    setTo("");
+                    setStatusFilter("ALL");
+                    setQuery("");
+                  }}
+                  className={cn(
+                    "inline-flex h-7 items-center justify-center rounded-md px-3 text-xs font-medium transition-all duration-150",
+                    !from && !to
+                      ? "bg-card text-foreground font-semibold shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  All
+                </button>
+              </div>
             </div>
           </div>
 
@@ -245,16 +281,16 @@ export function DashboardView() {
               }
             />
           ) : (
-            <div className="overflow-x-auto rounded-md border border-border">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-secondary/60 text-xs text-muted-foreground">
+            <div className="overflow-auto rounded-lg border border-border bg-card max-sm:max-h-[60vh]">
+              <table className="w-full min-w-full text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-secondary text-[11px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border">
                   <tr>
-                    <th className="px-3 py-2 font-medium">Accession</th>
-                    <th className="px-3 py-2 font-medium">Patient</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium text-right">Total</th>
-                    <th className="px-3 py-2 font-medium text-right">Due</th>
-                    <th className="px-3 py-2 font-medium text-right">Actions</th>
+                    <th className="px-3.5 py-2.5">Accession</th>
+                    <th className="px-3.5 py-2.5">Patient</th>
+                    <th className="px-3.5 py-2.5">Status</th>
+                    <th className="px-3.5 py-2.5 text-right">Total</th>
+                    <th className="px-3.5 py-2.5 text-right">Due</th>
+                    <th className="px-3.5 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -281,7 +317,26 @@ export function DashboardView() {
                         {formatInr(order.due)}
                       </td>
                       <td className="px-3 py-2">
-                        <div className="flex justify-end gap-1">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <PaymentUpdateDialog
+                            orderId={order.id}
+                            accessionNo={order.accessionNo}
+                            patientName={order.patientName}
+                            totalCharge={order.totalCharge}
+                            discount={order.discount}
+                            amountPaid={order.amountPaid}
+                            onUpdated={(b) => {
+                              patchSnapshot((current) => ({
+                                ...current,
+                                dashboard: {
+                                  ...current.dashboard,
+                                  bookings: (current.dashboard.bookings ?? []).map((row) =>
+                                    row.id === order.id ? { ...row, discount: b.discount, amountPaid: b.amountPaid, due: b.due } : row
+                                  ),
+                                },
+                              }));
+                            }}
+                          />
                           {isCustomerVisibleReport(order.status as OrderStatus) ? (
                             <Button asChild size="sm" variant="ghost">
                               <Link href={`/orders/${order.id}/report` as never}>
@@ -297,7 +352,10 @@ export function DashboardView() {
                             </a>
                           </Button>
                           <Button asChild size="sm" variant="ghost">
-                            <Link href={`/orders/${order.id}` as never}>Edit</Link>
+                            <Link href={`/orders/${order.id}` as never}>
+                              <Pencil />
+                              Edit
+                            </Link>
                           </Button>
                           {canCancel(order.status) ? (
                             <ConfirmDialog

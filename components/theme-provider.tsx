@@ -49,9 +49,7 @@ export function ThemeProvider({
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(initialResolved);
 
   useLayoutEffect(() => {
-    const stored = parseTheme(window.localStorage.getItem("theme"));
-    setThemeState(stored);
-    setResolvedTheme(applyTheme(stored));
+    applyTheme(theme);
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     function onSystemChange() {
@@ -60,7 +58,7 @@ export function ThemeProvider({
     }
     media.addEventListener("change", onSystemChange);
     return () => media.removeEventListener("change", onSystemChange);
-  }, []);
+  }, [theme]);
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);

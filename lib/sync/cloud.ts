@@ -80,8 +80,20 @@ function isUniqueConflict(error: unknown) {
 }
 
 function uniqueEqualsWhere(uniqueWhere: object) {
+  if (!uniqueWhere || typeof uniqueWhere !== "object") return {};
   const inner = Object.values(uniqueWhere)[0];
-  return inner && typeof inner === "object" ? (inner as Record<string, unknown>) : (uniqueWhere as Record<string, unknown>);
+  if (inner && typeof inner === "object" && !Array.isArray(inner) && !(inner instanceof Date)) {
+    const clean: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(inner as Record<string, unknown>)) {
+      if (v !== undefined) clean[k] = v;
+    }
+    return clean;
+  }
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(uniqueWhere as Record<string, unknown>)) {
+    if (v !== undefined) clean[k] = v;
+  }
+  return clean;
 }
 
 function withoutUniqueFields(data: Record<string, unknown>, uniqueWhere: object) {
@@ -97,7 +109,15 @@ async function findByBusinessKey(model: any, uniqueWhere: object) {
   } catch {
     /* Compound unique name can disagree after schema changes; equals-where still works. */
   }
-  return model.findFirst({ where: uniqueEqualsWhere(uniqueWhere) as never });
+  try {
+    const where = uniqueEqualsWhere(uniqueWhere);
+    if (where && Object.keys(where).length > 0) {
+      return await model.findFirst({ where: where as never });
+    }
+  } catch {
+    /* Safely ignore findFirst fallback failure if equals-where is not supported */
+  }
+  return null;
 }
 
 async function updateIgnoringUnique(

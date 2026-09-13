@@ -115,7 +115,7 @@ export const CALC_RULES: Record<string, CalcRule> = {
       const maxTerm = Math.pow(Math.max(ratio, 1), -1.2);
       const ageTerm = Math.pow(0.9938, ctx.ageYears);
       const value = 142 * minTerm * maxTerm * ageTerm * sexMultiplier;
-      return { value: Math.round(value * 10) / 10 };
+      return { value };
     },
   },
   BUN_CREATININE_RATIO: {

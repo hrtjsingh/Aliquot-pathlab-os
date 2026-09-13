@@ -43,12 +43,12 @@ export function SkeletonHint() {
 
 export function SkeletonKpiCard({ label }: { label: string }) {
   return (
-    <Card className="h-full">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
+    <Card className="h-full border-t-2 border-t-muted">
+      <CardHeader className="pb-1 pt-3 px-3.5">
+        <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</CardTitle>
       </CardHeader>
-      <CardContent className="pt-0">
-        <Skeleton className="h-8 w-10" />
+      <CardContent className="pt-0 px-3.5 pb-3">
+        <Skeleton className="h-8 w-12" />
       </CardContent>
     </Card>
   );

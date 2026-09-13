@@ -246,7 +246,7 @@ export async function updateOrderPayment(params: { orderId: string; discount: nu
 }
 
 export async function cancelOrder(orderId: string) {
-  const user = await requireWritableLab();
+  await requireWritableLab();
   return transitionOrderStatus(orderId, OrderStatus.CANCELLED);
 }
 

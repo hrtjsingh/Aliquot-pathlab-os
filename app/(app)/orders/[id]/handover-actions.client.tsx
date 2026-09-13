@@ -1,6 +1,7 @@
 "use client";
 
 import type { OrderStatus } from "@prisma/client";
+import { MessageCircle, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { markReportCollected, sendReportOnWhatsApp } from "@/app/actions/delivery";
@@ -36,7 +37,8 @@ export function HandoverActions({
         confirmLabel="Send on WhatsApp"
         successMessage="WhatsApp opened with the report link."
         trigger={
-          <Button type="button" size={size}>
+          <Button type="button" size={size} className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-2xs">
+            <MessageCircle className="size-4 shrink-0" />
             Send on WhatsApp
           </Button>
         }
@@ -68,6 +70,7 @@ export function HandoverActions({
           successMessage="Marked as collected."
           trigger={
             <Button type="button" size={size} variant="outline">
+              <Check className="size-4 shrink-0" />
               Collected by customer
             </Button>
           }

@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { EmptyState } from "@/components/empty-state";
 import type { LabSnapshot } from "@/app/actions/offline";
 import type { CloudBackupStatus, CloudSyncResult } from "@/lib/sync/cloud";
@@ -98,30 +99,49 @@ function statusToResult(status: CloudBackupStatus): CloudSyncResult {
   };
 }
 
-async function waitForCloudBackup(): Promise<CloudSyncResult> {
+async function waitForCloudBackup(isAuto = false): Promise<CloudSyncResult> {
   const started = Date.now() - 2_000;
-  const deadline = Date.now() + 75_000;
-  let delay = 800;
+  const deadline = Date.now() + (isAuto ? 3_000 : 18_000);
+  let delay = 600;
   while (Date.now() < deadline) {
-    const status = await readCloudBackupStatus();
-    if (!status.running && status.result) return status.result;
-    const updated = status.updatedAt ? Date.parse(status.updatedAt) : 0;
-    const pushed = status.lastPushedAt ? Date.parse(status.lastPushedAt) : 0;
-    if (!status.running && (updated >= started || pushed >= started)) return statusToResult(status);
+    const status = await readCloudBackupStatus().catch(() => null);
+    if (status) {
+      if (!status.running && status.result) return status.result;
+      const updated = status.updatedAt ? Date.parse(status.updatedAt) : 0;
+      const pushed = status.lastPushedAt ? Date.parse(status.lastPushedAt) : 0;
+      if (!status.running && (updated >= started || pushed >= started)) return statusToResult(status);
+    }
     await sleep(delay);
-    delay = Math.min(Math.round(delay * 1.25), 3_000);
+    delay = Math.min(Math.round(delay * 1.25), 2_000);
   }
   return {
-    ok: false,
-    skipped: false,
+    ok: true,
+    skipped: true,
+    pending: true,
     pushed: 0,
     pulled: 0,
     conflicts: [],
-    message: "Cloud backup timed out. Tap Sync again.",
+    message: isAuto ? "Cloud backup is running in background." : "Cloud backup is taking longer. Tap Sync again later.",
   };
 }
 
-function toastAfterSync(cloud: CloudSyncResult | undefined, outbox: { flushed: number; remaining: number }) {
+function toastAfterSync(cloud: CloudSyncResult | undefined, outbox: { flushed: number; remaining: number }, isAuto = false) {
+  if (isAuto) {
+    if (outbox.flushed > 0) {
+      toast.success(
+        outbox.flushed === 1
+          ? "Sent 1 queued change and refreshed lab data."
+          : `Sent ${outbox.flushed} queued changes and refreshed lab data.`
+      );
+    }
+    if (outbox.remaining > 0) {
+      toast.error(
+        `${outbox.remaining} queued change${outbox.remaining === 1 ? "" : "s"} waiting to sync.`
+      );
+    }
+    return;
+  }
+
   if (cloud && !cloud.ok && !cloud.skipped) {
     toast.error(cloud.message);
   } else if (outbox.flushed > 0 && outbox.remaining > 0) {
@@ -269,20 +289,21 @@ export function DataSyncProvider({
 
     syncingRef.current = true;
     setSyncing(true);
-    if (options?.auto) toast.message("Internet connected — syncing lab data…");
     try {
       const pushed = await flushOutbox();
       const next = await requestLabSnapshot("sync");
       await persistSnapshot(next);
       router.refresh();
       let cloud = next.cloudSync;
-      if (cloud?.pending) cloud = await waitForCloudBackup();
-      toastAfterSync(cloud, pushed);
+      if (cloud?.pending) cloud = await waitForCloudBackup(Boolean(options?.auto));
+      toastAfterSync(cloud, pushed, Boolean(options?.auto));
     } catch (error) {
       const timedOut =
         (error instanceof DOMException && error.name === "TimeoutError") ||
         (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"));
-      toast.error(timedOut ? "Could not reach the lab server. Tap Sync again." : error instanceof Error ? error.message : "Could not sync. Try again.");
+      if (!options?.auto) {
+        toast.error(timedOut ? "Could not reach the lab server. Tap Sync again." : error instanceof Error ? error.message : "Could not sync. Try again.");
+      }
     } finally {
       syncingRef.current = false;
       setSyncing(false);
@@ -342,7 +363,7 @@ export function CacheMiss({ loading }: { loading: ReactNode }) {
   if (snapshot) return null;
   if (!ready || syncing || loadingCache) return <>{loading}</>;
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <EmptyState
         title="Lab data isn’t cached yet"
         description="Load patients, the worklist, and dashboard counts from this lab computer. Pages then stay cached until you sync again."
@@ -375,36 +396,33 @@ function formatSynced(iso: string | null) {
 
 export function SyncControl({ compact = false }: { compact?: boolean }) {
   const { lastSyncedAt, queued, syncing, syncNow } = useDataSync();
-
-  if (compact) {
-    return (
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={() => void syncNow()}
-        disabled={syncing}
-        aria-label={queued > 0 ? `Sync, ${queued} waiting` : "Sync lab data"}
-      >
-        <RefreshCw className={cn(syncing && "animate-spin")} />
-      </Button>
-    );
-  }
+  const tooltipText = formatSynced(lastSyncedAt);
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="w-full justify-start"
-        onClick={() => void syncNow()}
-        disabled={syncing}
-      >
-        <RefreshCw className={cn(syncing && "animate-spin")} />
-        {syncing ? "Syncing…" : queued > 0 ? `Sync (${queued})` : "Sync"}
-      </Button>
-      <p className="px-1 text-[11px] text-sidebar-muted">{formatSynced(lastSyncedAt)}</p>
-    </div>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant={compact ? "ghost" : "outline"}
+            size={compact ? "icon" : "sm"}
+            onClick={() => void syncNow()}
+            disabled={syncing}
+            title={tooltipText}
+            aria-label={queued > 0 ? `Sync (${queued} waiting) - ${tooltipText}` : `Sync lab data - ${tooltipText}`}
+            className={cn(!compact && "gap-1.5 text-xs font-semibold shadow-2xs")}
+          >
+            <RefreshCw className={cn("size-3.5 shrink-0", syncing && "animate-spin")} />
+            {!compact ? (syncing ? "Syncing…" : queued > 0 ? `Sync (${queued})` : "Sync") : null}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="center" className="flex flex-col gap-0.5 font-medium">
+          <span>{tooltipText}</span>
+          {queued > 0 ? (
+            <span className="text-[10px] text-amber-500 font-semibold">{queued} change{queued === 1 ? "" : "s"} queued to sync</span>
+          ) : null}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

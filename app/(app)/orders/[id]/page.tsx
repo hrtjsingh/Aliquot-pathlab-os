@@ -3,13 +3,12 @@ import { auth } from "@/auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { PriorityBadge, StatusBadge } from "@/components/status-badge";
 import { WorkflowStepper } from "@/components/workflow-stepper";
 import { ResultTable } from "./result-table.client";
 import { OrderActions } from "./order-actions.client";
-import { BillingCard } from "./billing-card.client";
 import { OrderItemsEditor } from "./order-items-editor.client";
+import { OrderWorkspace } from "./order-workspace.client";
 import { CriticalCallDialog } from "./critical-call-dialog";
 import { ageInDays, formatRangeText, resolveReferenceRange } from "@/lib/reference-range";
 import { asMoney } from "@/lib/money";
@@ -22,9 +21,9 @@ import { ensurePublicReportToken, publicReportPath } from "@/lib/public-report";
 import { isCustomerVisibleReport } from "@/lib/workflow";
 
 const NEXT_STEP: Record<string, string> = {
-  ORDER_CREATED: "Collect the sample, then mark it collected and received when it is on the bench.",
-  SAMPLE_COLLECTED: "Receive the specimen in the lab to unlock result entry.",
-  SAMPLE_RECEIVED: "Enter numeric or text results. Each value saves when you leave the field.",
+  ORDER_CREATED: "Select packages and tests, collect payment, then mark the sample collected and received.",
+  SAMPLE_COLLECTED: "Receive the specimen in the lab. After that, this page switches to result entry.",
+  SAMPLE_RECEIVED: "Enter test results below. Each value saves automatically when you leave the field or press Enter.",
   RESULT_ENTRY: "Review flags, log any critical call-back, then submit for technologist verification.",
   TECH_VERIFIED: "A pathologist reviews and authorizes the report.",
   AUTHORIZED: "Release the report so it can be printed, sent on WhatsApp, or collected.",
@@ -108,7 +107,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
   const hasOpenCritical = rows.some((r) => r.flag === "CRITICAL_LOW" || r.flag === "CRITICAL_HIGH");
   const criticalLogged = order.criticalCalls.length > 0;
   const editable = order.status === "RESULT_ENTRY" || order.status === "SAMPLE_RECEIVED";
-  const itemsEditable = ["ORDER_CREATED", "SAMPLE_COLLECTED", "SAMPLE_RECEIVED", "RESULT_ENTRY"].includes(order.status);
+  const allowTests = ["ORDER_CREATED", "SAMPLE_COLLECTED"].includes(order.status);
+  const allowResults = !["ORDER_CREATED", "SAMPLE_COLLECTED"].includes(order.status);
+  const initialStage = allowResults ? "results" : "tests";
   const totalCharge = asMoney(order.totalCharge);
   const discount = asMoney(order.discount);
   const amountPaid = asMoney(order.amountPaid);
@@ -117,7 +118,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     : null;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title={`${order.patient.firstName} ${order.patient.lastName ?? ""}`}
         description={`${order.accessionNo} · ${order.patient.gender} · MRN ${order.patient.mrn}`}
@@ -150,8 +151,6 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
       <WorkflowStepper status={order.status} />
 
-      <InstructionAlert title="Next step">{NEXT_STEP[order.status]}</InstructionAlert>
-
       {hasOpenCritical && !criticalLogged ? <CriticalCallDialog orderId={id} accessionNo={order.accessionNo} /> : null}
 
       <div className="flex flex-wrap items-center gap-3">
@@ -164,61 +163,59 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         />
       </div>
 
-      <BillingCard
-        orderId={id}
-        accessionNo={order.accessionNo}
-        status={order.status}
-        role={role}
-        totalCharge={totalCharge}
-        discount={discount}
-        amountPaid={amountPaid}
+      <OrderWorkspace
+        initialStage={initialStage}
+        allowTests={allowTests}
+        allowResults={allowResults}
+        tests={
+          <OrderItemsEditor
+            orderId={id}
+            patientId={order.patientId}
+            referringDoctor={order.referringDoctor ?? "Dr. SELF"}
+            discount={discount}
+            amountPaid={amountPaid}
+            testIds={order.orderTests.map((row) => row.testId)}
+            panelIds={order.orderPanels.map((row) => row.panelId)}
+          />
+        }
+        results={
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle>Results</CardTitle>
+                <CardDescription>
+                  {editable
+                    ? "Type a value and press Enter to move to the next test. Values also save when you leave the field. Open the book icon for that test's laboratory profile."
+                    : "Results are locked at this stage. Open the book icon for specimen, method, and ranges."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <ResultTable orderId={id} rows={rows} editable={editable} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Audit</CardTitle>
+                <CardDescription>Timestamps and authorization trail for this accession.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
+                <p>Created: {order.createdAt.toLocaleString()}</p>
+                {order.collectedAt ? <p>Collected: {order.collectedAt.toLocaleString()}</p> : null}
+                {order.receivedAt ? <p>Received: {order.receivedAt.toLocaleString()}</p> : null}
+                {order.authorizedBy ? <p>Authorized by: Dr. {order.authorizedBy.name}</p> : null}
+                {order.reportedAt ? <p>Released: {order.reportedAt.toLocaleString()}</p> : null}
+                {order.criticalCalls.length > 0 ? (
+                  <p>
+                    Critical call-back: {order.criticalCalls[0].notifiedName}
+                    {order.criticalCalls[0].notifiedRole ? ` (${order.criticalCalls[0].notifiedRole})` : ""}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          </>
+        }
       />
-
-      {itemsEditable ? (
-        <OrderItemsEditor
-          orderId={id}
-          patientId={order.patientId}
-          referringDoctor={order.referringDoctor ?? "Dr. SELF"}
-          discount={discount}
-          amountPaid={amountPaid}
-          testIds={order.orderTests.map((row) => row.testId)}
-          panelIds={order.orderPanels.map((row) => row.panelId)}
-        />
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Results</CardTitle>
-          <CardDescription>
-            {editable
-              ? "Type a value and click outside the field to save. Open the book icon for that test's laboratory profile."
-              : "Results are locked at this stage. Open the book icon for specimen, method, and ranges."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <ResultTable orderId={id} rows={rows} editable={editable} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Audit</CardTitle>
-          <CardDescription>Timestamps and authorization trail for this accession.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
-          <p>Created: {order.createdAt.toLocaleString()}</p>
-          {order.collectedAt ? <p>Collected: {order.collectedAt.toLocaleString()}</p> : null}
-          {order.receivedAt ? <p>Received: {order.receivedAt.toLocaleString()}</p> : null}
-          {order.authorizedBy ? <p>Authorized by: Dr. {order.authorizedBy.name}</p> : null}
-          {order.reportedAt ? <p>Released: {order.reportedAt.toLocaleString()}</p> : null}
-          {order.criticalCalls.length > 0 ? (
-            <p>
-              Critical call-back: {order.criticalCalls[0].notifiedName}
-              {order.criticalCalls[0].notifiedRole ? ` (${order.criticalCalls[0].notifiedRole})` : ""}
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
     </div>
   );
 }

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { saveLabConfig } from "@/app/actions/lab";
-import { DEFAULT_REPORT_LAYOUT, type ReportLayout } from "@/lib/report-layout";
+import { DEFAULT_REPORT_LAYOUT, REPORT_TEMPLATES, type ReportLayout } from "@/lib/report-layout";
 import { cn } from "@/lib/utils";
 
 type BranchFields = {
@@ -154,6 +154,48 @@ export function LabConfigForm({
                 onChange={(event) => setBranch({ ...branch, letterheadUrl: event.target.value })}
               />
               <p className="text-xs text-muted-foreground">Optional. Use a public HTTPS image. Leave blank to print the lab name only.</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Standard Lab Report Templates</CardTitle>
+            <CardDescription>Select from 5 standard, pathology lab-tested PDF report layout designs.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {REPORT_TEMPLATES.map((tmpl) => {
+                const isSelected = (layout.templateId || "shiv_clinical") === tmpl.id;
+                return (
+                  <button
+                    key={tmpl.id}
+                    type="button"
+                    onClick={() => {
+                      setLayout((curr) => ({
+                        ...curr,
+                        templateId: tmpl.id,
+                        primaryColor: tmpl.defaultColor,
+                      }));
+                    }}
+                    className={cn(
+                      "flex flex-col text-left p-3 rounded-lg border transition-all cursor-pointer",
+                      isSelected
+                        ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-sm"
+                        : "border-border hover:border-muted-foreground/30 hover:bg-secondary/40"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-sm text-foreground">{tmpl.name}</span>
+                      <span
+                        className="size-3.5 rounded-full border border-black/10 shrink-0"
+                        style={{ backgroundColor: tmpl.defaultColor }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{tmpl.description}</p>
+                  </button>
+                );
+              })}
             </div>
           </CardContent>
         </Card>

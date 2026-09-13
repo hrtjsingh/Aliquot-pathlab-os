@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireTenant } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { listPanelsForAdmin } from "@/app/actions/packages";
 import { PackagesAdmin } from "./packages-admin.client";
 import { asMoney } from "@/lib/money";
@@ -26,15 +25,10 @@ export default async function PackagesPage() {
   ]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="Packages"
         description="Create billed panels. The package charge is used on new orders, not the sum of member tests."
-        hint={
-          <InstructionAlert title="Package rates">
-            Add the tests that print on the report, then set the package price. Packages already used on orders are deactivated instead of deleted.
-          </InstructionAlert>
-        }
       />
       <PackagesAdmin
         panels={panels.map((panel) => ({

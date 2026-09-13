@@ -37,42 +37,44 @@ export function TestsCatalog({ tests }: { tests: CatalogTest[] }) {
   });
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-2">
-        <div className="relative w-full min-w-[16rem]">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full lg:w-1/2 lg:max-w-md">
           <Search className="pointer-events-none absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
           <Input
-            className="pl-8"
+            className="w-full pl-8"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search code or name"
             aria-label="Search tests"
           />
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <NativeSelect
-          className="w-full sm:w-52 sm:shrink-0"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          aria-label="Filter by category"
-        >
-          <option value="ALL">All categories</option>
-          {categories.map((item) => (
-            <option key={item} value={item}>
-              {item.replaceAll("_", " ")}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          className="w-full sm:w-40 sm:shrink-0"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          aria-label="Filter by status"
-        >
-          <option value="ALL">All statuses</option>
-          <option value="ACTIVE">Active</option>
-          <option value="INACTIVE">Inactive</option>
-        </NativeSelect>
+
+        <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+          <NativeSelect
+            className="w-full sm:w-52 shrink-0"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            aria-label="Filter by category"
+          >
+            <option value="ALL">All categories</option>
+            {categories.map((item) => (
+              <option key={item} value={item}>
+                {item.replaceAll("_", " ")}
+              </option>
+            ))}
+          </NativeSelect>
+
+          <NativeSelect
+            className="w-full sm:w-40 shrink-0"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            aria-label="Filter by status"
+          >
+            <option value="ALL">All statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </NativeSelect>
         </div>
       </div>
 
@@ -94,13 +96,13 @@ export function TestsCatalog({ tests }: { tests: CatalogTest[] }) {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Charge</TableHead>
-                  <TableHead>Specimen</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                <TableRow className="bg-secondary/70 border-b border-border">
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Code</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Name</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Charge</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Specimen</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Status</TableHead>
+                  <TableHead className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -132,7 +134,7 @@ export function TestsCatalog({ tests }: { tests: CatalogTest[] }) {
                           <Badge variant={test.active ? "success" : "outline"}>{test.active ? "Active" : "Inactive"}</Badge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-wrap justify-end gap-2">
                             <TestProfileDialog test={test} canEdit />
                             <ToggleTestButton testId={test.id} active={test.active} name={test.name} />
                             <DeleteTestButton testId={test.id} name={test.name} />

@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireTenant } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
-import { InstructionAlert } from "@/components/instruction-alert";
 import { AddTestDialog } from "./add-test-dialog";
 import { TestsCatalog } from "./tests-catalog.client";
 import type { TestProfile } from "@/lib/test-profile";
@@ -70,16 +69,11 @@ export default async function TestMasterPage() {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="Test master"
         description="Search the catalog, set charges and formulas, and remove unused tests."
         actions={<AddTestDialog />}
-        hint={
-          <InstructionAlert title="Test profiles">
-            Open Profile to edit name, category, charge, and formula. Delete removes unused tests; tests already on orders are deactivated instead.
-          </InstructionAlert>
-        }
       />
       <TestsCatalog tests={catalog} />
     </div>

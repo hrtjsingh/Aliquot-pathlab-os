@@ -4,10 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { assertWritableLab, requireRole, requireTenant, requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { resolveReferenceRange, formatRangeText, ageInDays } from "@/lib/reference-range";
-import { computeFlag, computeDelta, isAutoVerifyEligible, requiresCriticalCallback, parseRangeBounds } from "@/lib/flagging";
+import { computeFlag, computeDelta, requiresCriticalCallback, parseRangeBounds } from "@/lib/flagging";
 import { runCalcRule } from "@/lib/calc-engine";
 import { generateInterpretiveComments } from "@/lib/interpretive-comments";
-import { OrderStatus, ResultStatus, Role } from "@prisma/client";
+import { OrderStatus, Prisma, ResultStatus, Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { newPublicReportToken } from "@/lib/public-report";
 
@@ -125,7 +125,7 @@ export async function saveManualResult(params: {
     grossDescription: params.grossDescription ?? null,
     microscopicDescription: params.microscopicDescription ?? null,
     diagnosis: params.diagnosis ?? null,
-    organismPanel: params.organismPanel as any,
+    organismPanel: params.organismPanel as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined,
     qualitativeResult: params.qualitativeResult ?? null,
     ctValue: params.ctValue ?? null,
   };
@@ -186,15 +186,15 @@ export async function cascadeDerivedResults(orderId: string, vendorId: string) {
             rangeCtx.ageDays <= c.ageMaxDays
         ) ?? null;
       const flag = computeFlag({ numericValue: calcResult.value, range, criticalThreshold: critical });
-      const rounded = Math.round(calcResult.value * Math.pow(10, test.decimalPrecision)) / Math.pow(10, test.decimalPrecision);
+      const derivedValue = calcResult.value;
 
       const existing = existingResults.find((r) => r.testId === test.id);
-      if (existing && existing.numericValue === rounded) continue;
+      if (existing && existing.numericValue === derivedValue) continue;
 
       const data = {
         orderId,
         testId: test.id,
-        numericValue: rounded,
+        numericValue: derivedValue,
         unit: test.unit,
         referenceRangeText: formatRangeText(range),
         flag,
@@ -204,12 +204,12 @@ export async function cascadeDerivedResults(orderId: string, vendorId: string) {
       };
       if (existing) {
         await prisma.result.update({ where: { id: existing.id }, data });
-        existing.numericValue = rounded;
+        existing.numericValue = derivedValue;
       } else {
         const created = await prisma.result.create({ data });
         existingResults.push(created);
       }
-      valueByCode.set(test.code, rounded);
+      valueByCode.set(test.code, derivedValue);
       changed = true;
     }
     if (!changed) break;

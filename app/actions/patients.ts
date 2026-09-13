@@ -6,6 +6,8 @@ import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { genderFromTitle, titledGivenName } from "@/lib/patient-name";
+import { asMoney } from "@/lib/money";
+import { isCustomerVisibleReport } from "@/lib/workflow";
 
 const PatientSchema = z.object({
   title: z.enum(["Mr", "Mrs", "Miss"]),
@@ -121,4 +123,51 @@ export async function searchPatients(query: string) {
     orderBy: { createdAt: "desc" },
     take: 25,
   });
+}
+
+export async function getPatientOrders(patientId: string) {
+  const user = await requireTenant();
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, vendorId: user.vendorId },
+  });
+  if (!patient) return null;
+
+  const orders = await prisma.order.findMany({
+    where: { patientId, vendorId: user.vendorId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      accessionNo: true,
+      createdAt: true,
+      status: true,
+      priority: true,
+      totalCharge: true,
+      discount: true,
+      amountPaid: true,
+      publicToken: true,
+    },
+  });
+
+  return {
+    patient,
+    orders: orders.map((order) => {
+      const totalCharge = asMoney(order.totalCharge);
+      const discount = asMoney(order.discount);
+      const amountPaid = asMoney(order.amountPaid);
+      const due = asMoney(totalCharge - discount - amountPaid);
+      return {
+        id: order.id,
+        accessionNo: order.accessionNo,
+        createdAt: order.createdAt,
+        status: order.status,
+        priority: order.priority,
+        totalCharge,
+        discount,
+        amountPaid,
+        due,
+        reportVisible: isCustomerVisibleReport(order.status),
+        publicToken: order.publicToken,
+      };
+    }),
+  };
 }
