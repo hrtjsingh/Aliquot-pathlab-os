@@ -87,6 +87,15 @@ model SuperAdmin {
   updatedAt    DateTime @updatedAt
 }
 
+/// HQ publishes its Ed25519 public key here so Vercel / labs can verify leases
+/// without shipping `.license-public.pem` (gitignored).
+model LicenseAuthority {
+  id           String   @id @default("hq")
+  publicKeyPem String   @db.Text
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+}
+
 model Plan {
   id             String   @id @default(cuid())
   code           String   @unique

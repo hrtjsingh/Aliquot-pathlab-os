@@ -49,6 +49,7 @@ function canCancel(status: string) {
 
 export function DashboardView() {
   const router = useRouter();
+  const isPwa = useIsInstalledPwa();
   const { snapshot, patchSnapshot, syncNow } = useDataSync();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof BOOKING_STATUSES)[number]>("ALL");
@@ -56,8 +57,9 @@ export function DashboardView() {
   const [to, setTo] = useState(todayIso);
 
   useEffect(() => {
+    if (!isPwa) return;
     void syncNow({ auto: true });
-  }, [syncNow]);
+  }, [isPwa, syncNow]);
 
   if (!snapshot) return <CacheMiss loading={<DashboardLoading />} />;
 
