@@ -12,6 +12,7 @@ import { transitionOrderStatus } from "@/app/actions/orders";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { HandoverActions } from "@/app/(app)/orders/[id]/handover-actions.client";
 import { isHandoverDone } from "@/lib/workflow";
+import { ClipboardList } from "lucide-react";
 
 type WorklistOrder = {
   id: string;
