@@ -11,7 +11,7 @@ import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbo
 import { TestProfileDialog } from "@/app/(app)/admin/tests/test-profile-dialog";
 import type { TestProfile } from "@/lib/test-profile";
 import { Button } from "@/components/ui/button";
-import { BookOpen } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight } from "lucide-react";
 import { previewFlag } from "@/lib/flagging";
 
 type ResultRow = {
@@ -46,7 +46,20 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
     Object.fromEntries(rows.map((r) => [r.testId, r.numericValue != null ? String(r.numericValue) : (r.textValue ?? "")]))
   );
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [, startTransition] = useTransition();
+
+  const toggleCategory = (cat: string) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) {
+        next.delete(cat);
+      } else {
+        next.add(cat);
+      }
+      return next;
+    });
+  };
 
   const groups = useMemo(() => {
     const map = new Map<string, ResultRow[]>();
@@ -127,72 +140,106 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
         </TableRow>
       </TableHeader>
       <TableBody>
-        {groups.map(([category, group]) => (
-          <Fragment key={category}>
-            <TableRow className="bg-secondary/60 hover:bg-secondary/60">
-              <TableCell colSpan={5} className="text-xs font-medium tracking-wide text-muted-foreground">
-                {category.replaceAll("_", " ")}
-              </TableCell>
-            </TableRow>
-            {group.map((row) => {
-              const raw = values[row.testId] ?? "";
-              const rangeText = row.referenceRangeText ?? "";
-              const numeric = row.dataType === "NUMERIC" && raw.trim() !== "" ? Number(raw) : row.numericValue;
-              const liveFlag = editable && row.dataType === "NUMERIC" ? previewFlag(numeric, rangeText) : row.flag;
-              const flag = FLAG_BADGE[liveFlag] ?? FLAG_BADGE.NORMAL;
-              return (
-                <TableRow key={row.testId}>
-                  <TableCell className="text-sm">
-                    <div className="flex items-center gap-1">
-                      <span>
-                        {row.name}
-                        {row.isDerived ? <span className="ml-1.5 text-xs text-muted-foreground">(calc.)</span> : null}
+        {groups.map(([category, group]) => {
+          const isCollapsed = collapsedCategories.has(category);
+          return (
+            <Fragment key={category}>
+              <TableRow
+                className="bg-secondary/60 hover:bg-secondary/90 cursor-pointer select-none transition-colors border-b border-border/50"
+                onClick={() => toggleCategory(category)}
+                role="button"
+                tabIndex={0}
+                aria-expanded={!isCollapsed}
+                aria-label={`Toggle ${category.replaceAll("_", " ")} category`}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toggleCategory(category);
+                  }
+                }}
+              >
+                <TableCell colSpan={5} className="py-2.5 px-4 font-medium text-xs text-foreground">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground transition-transform duration-200">
+                        {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
                       </span>
-                      <TestProfileDialog
-                        test={row.profile}
-                        trigger={
-                          <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={`${row.name} profile`}>
-                            <BookOpen />
-                          </Button>
-                        }
-                      />
+                      <span className="font-semibold tracking-wide text-xs uppercase text-foreground">
+                        {category.replaceAll("_", " ")}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] font-normal px-1.5 py-0 text-muted-foreground">
+                        {group.length} {group.length === 1 ? "test" : "tests"}
+                      </Badge>
                     </div>
-                  </TableCell>
-                  <TableCell className="w-40">
-                    {row.isDerived ? (
-                      <span className="tabular text-sm font-medium">
-                        {row.numericValue != null ? row.numericValue.toFixed(2) : "—"}
+                    {isCollapsed && (
+                      <span className="text-[11px] text-muted-foreground font-normal italic pr-2">
+                        Click to expand
                       </span>
-                    ) : editable ? (
-                      <Input
-                        className="tabular h-8 w-32"
-                        aria-label={`${row.name} result`}
-                        data-result-input="true"
-                        value={raw}
-                        disabled={pendingId === row.testId}
-                        onChange={(e) => setValues((v) => ({ ...v, [row.testId]: e.target.value }))}
-                        onKeyDown={onResultKeyDown}
-                        onBlur={(e) => commit(row, e.target.value)}
-                      />
-                    ) : (
-                      <span className="tabular text-sm">{row.numericValue ?? row.textValue ?? "—"}</span>
                     )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{row.unit}</TableCell>
-                  <TableCell className="w-44">
-                    <span className="tabular text-xs text-muted-foreground">{rangeText || "—"}</span>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      {liveFlag !== "NORMAL" ? <Badge variant={flag.variant}>{flag.label}</Badge> : null}
-                      {row.deltaFlag ? <Badge variant="secondary">Δ</Badge> : null}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </Fragment>
-        ))}
+                  </div>
+                </TableCell>
+              </TableRow>
+              {!isCollapsed &&
+                group.map((row) => {
+                  const raw = values[row.testId] ?? "";
+                  const rangeText = row.referenceRangeText ?? "";
+                  const numeric = row.dataType === "NUMERIC" && raw.trim() !== "" ? Number(raw) : row.numericValue;
+                  const liveFlag = editable && row.dataType === "NUMERIC" ? previewFlag(numeric, rangeText) : row.flag;
+                  const flag = FLAG_BADGE[liveFlag] ?? FLAG_BADGE.NORMAL;
+                  return (
+                    <TableRow key={row.testId} className="hover:bg-muted/30 transition-colors">
+                      <TableCell className="text-sm">
+                        <div className="flex items-center gap-1">
+                          <span>
+                            {row.name}
+                            {row.isDerived ? <span className="ml-1.5 text-xs text-muted-foreground">(calc.)</span> : null}
+                          </span>
+                          <TestProfileDialog
+                            test={row.profile}
+                            trigger={
+                              <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={`${row.name} profile`}>
+                                <BookOpen />
+                              </Button>
+                            }
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="w-40">
+                        {row.isDerived ? (
+                          <span className="tabular text-sm font-medium">
+                            {row.numericValue != null ? row.numericValue.toFixed(2) : "—"}
+                          </span>
+                        ) : editable ? (
+                          <Input
+                            className="tabular h-8 w-32"
+                            aria-label={`${row.name} result`}
+                            data-result-input="true"
+                            value={raw}
+                            disabled={pendingId === row.testId}
+                            onChange={(e) => setValues((v) => ({ ...v, [row.testId]: e.target.value }))}
+                            onKeyDown={onResultKeyDown}
+                            onBlur={(e) => commit(row, e.target.value)}
+                          />
+                        ) : (
+                          <span className="tabular text-sm">{row.numericValue ?? row.textValue ?? "—"}</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{row.unit}</TableCell>
+                      <TableCell className="w-44">
+                        <span className="tabular text-xs text-muted-foreground">{rangeText || "—"}</span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {liveFlag !== "NORMAL" ? <Badge variant={flag.variant}>{flag.label}</Badge> : null}
+                          {row.deltaFlag ? <Badge variant="secondary">Δ</Badge> : null}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+            </Fragment>
+          );
+        })}
       </TableBody>
     </Table>
   );
