@@ -158,13 +158,14 @@ export function PatientRegisterDialog({
           </DialogDescription>
         </DialogHeader>
         <form action={submit} className="flex flex-col gap-3">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex flex-col gap-1.5 w-full sm:w-[80px] shrink-0">
               <Label htmlFor="title">Title</Label>
               <NativeSelect
                 id="title"
                 name="title"
                 required
+                className="w-full"
                 value={title}
                 onChange={(event) => {
                   const next = event.target.value as typeof title;
@@ -174,7 +175,7 @@ export function PatientRegisterDialog({
                 }}
               >
                 <option value="" disabled>
-                  Select
+                  Title
                 </option>
                 {PATIENT_TITLES.map((row) => (
                   <option key={row.value} value={row.value}>
@@ -183,11 +184,11 @@ export function PatientRegisterDialog({
                 ))}
               </NativeSelect>
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
               <Label htmlFor="firstName">First name</Label>
               <Input id="firstName" name="firstName" required />
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
               <Label htmlFor="lastName">Last name</Label>
               <Input id="lastName" name="lastName" />
             </div>
@@ -215,13 +216,15 @@ export function PatientRegisterDialog({
               </NativeSelect>
             </div>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="phone">Phone</Label>
-            <Input id="phone" name="phone" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="email">Email (optional)</Label>
-            <Input id="email" name="email" inputMode="email" autoComplete="email" />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="phone">Phone</Label>
+              <Input id="phone" name="phone" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Email (optional)</Label>
+              <Input id="email" name="email" inputMode="email" autoComplete="email" />
+            </div>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="address">Address</Label>

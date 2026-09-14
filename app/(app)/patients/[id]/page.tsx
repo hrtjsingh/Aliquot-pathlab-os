@@ -13,6 +13,8 @@ import { publicReportPath } from "@/lib/public-report";
 import { format } from "date-fns";
 import type { OrderStatus } from "@prisma/client";
 
+import { PatientEditDialog } from "../patient-edit-dialog";
+
 export default async function PatientHistoryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = await getPatientOrders(id);
@@ -30,9 +32,12 @@ export default async function PatientHistoryPage({ params }: { params: Promise<{
         title={name}
         description={subtitle}
         actions={
-          <Button asChild variant="outline">
-            <Link href={"/patients" as never}>Back to patients</Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <PatientEditDialog patient={patient} />
+            <Button asChild variant="outline">
+              <Link href={"/patients" as never}>Back to patients</Link>
+            </Button>
+          </div>
         }
       />
 

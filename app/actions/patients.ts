@@ -5,7 +5,7 @@ import { requireTenant, requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { genderFromTitle, titledGivenName } from "@/lib/patient-name";
+import { genderFromTitle, titledGivenName, stripTitlePrefix } from "@/lib/patient-name";
 import { asMoney } from "@/lib/money";
 import { isCustomerVisibleReport } from "@/lib/workflow";
 
@@ -169,5 +169,83 @@ export async function getPatientOrders(patientId: string) {
         publicToken: order.publicToken,
       };
     }),
+  };
+}
+
+const UpdatePatientSchema = z.object({
+  id: z.string().min(1),
+  title: z.enum(["Mr", "Mrs", "Miss"]).optional(),
+  firstName: z.string().min(1, "First name is required."),
+  lastName: z.string().optional(),
+  ageYears: z.preprocess(
+    (value) => (value === "" || value == null ? undefined : value),
+    z.coerce.number().int().min(0).max(130, "Enter a valid age.")
+  ),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]),
+  phone: z.string().optional(),
+  email: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : typeof value === "string" ? value.trim() : value),
+    z.string().email("Enter a valid email.").optional()
+  ),
+  address: z.string().optional(),
+});
+
+export async function updatePatient(formData: FormData) {
+  const user = await requireWritableLab();
+
+  const raw = Object.fromEntries(formData.entries());
+  const parsed = UpdatePatientSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues.map((i) => i.message).join(", ") };
+  }
+  const data = parsed.data;
+
+  const patient = await prisma.patient.findFirst({
+    where: { id: data.id, vendorId: user.vendorId },
+  });
+  if (!patient) return { ok: false as const, error: "Patient not found." };
+
+  const cleanFirstName = stripTitlePrefix(data.firstName);
+  const firstName = data.title ? titledGivenName(data.title, cleanFirstName) : data.firstName;
+
+  const updated = await prisma.patient.update({
+    where: { id: data.id },
+    data: {
+      firstName,
+      lastName: data.lastName || null,
+      ageYears: data.ageYears ?? null,
+      gender: data.gender,
+      phone: data.phone || null,
+      email: data.email || null,
+      address: data.address || null,
+    },
+  });
+
+  await logAudit({
+    vendorId: user.vendorId,
+    userId: user.userId,
+    action: "PATIENT_UPDATED",
+    entityType: "Patient",
+    entityId: updated.id,
+    after: updated,
+  });
+
+  revalidatePath("/patients");
+  revalidatePath("/orders/new");
+  revalidatePath(`/patients/${updated.id}`);
+
+  return {
+    ok: true as const,
+    patient: {
+      id: updated.id,
+      mrn: updated.mrn,
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+      ageYears: updated.ageYears,
+      gender: updated.gender,
+      phone: updated.phone,
+      email: updated.email,
+      address: updated.address,
+    },
   };
 }

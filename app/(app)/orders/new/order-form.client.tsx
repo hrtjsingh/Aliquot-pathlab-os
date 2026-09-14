@@ -12,6 +12,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PatientRegisterDialog } from "@/app/(app)/patients/patient-register-dialog";
+import { PatientEditDialog } from "@/app/(app)/patients/patient-edit-dialog";
 import { useDataSync } from "@/components/data-sync";
 import { createOrder } from "@/app/actions/orders";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
@@ -468,15 +469,32 @@ export function OrderForm({
                     </div>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setPatientId("")}
-                  className="text-xs text-muted-foreground hover:text-destructive shrink-0"
-                >
-                  Change
-                </Button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <PatientEditDialog
+                    patient={selectedPatient}
+                    onUpdated={(updated) => {
+                      const item: Patient = {
+                        id: updated.id,
+                        mrn: updated.mrn,
+                        firstName: updated.firstName,
+                        lastName: updated.lastName ?? null,
+                        phone: updated.phone ?? null,
+                        ageYears: updated.ageYears ?? null,
+                        gender: updated.gender ?? "",
+                      };
+                      setAddedPatients((prev) => [item, ...prev.filter((p) => p.id !== item.id)]);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPatientId("")}
+                    className="h-8 text-xs text-muted-foreground hover:text-destructive shrink-0"
+                  >
+                    Change
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="flex items-center justify-between rounded-lg border border-dashed border-border p-3.5 bg-muted/10 text-xs text-muted-foreground">

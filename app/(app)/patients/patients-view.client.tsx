@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { CacheMiss, useDataSync } from "@/components/data-sync";
 import { PatientRegisterDialog } from "./patient-register-dialog";
+import { PatientEditDialog } from "./patient-edit-dialog";
 import PatientsLoading from "./loading";
 
 export function PatientsView() {
@@ -87,6 +88,7 @@ export function PatientsView() {
                     <TableCell className="tabular">{patient.ageYears ?? "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex flex-wrap justify-end gap-1">
+                        <PatientEditDialog patient={patient} />
                         <Button asChild size="sm" variant="outline">
                           <Link href={`/orders/new?patientId=${patient.id}` as never}>
                             <FlaskConical />
