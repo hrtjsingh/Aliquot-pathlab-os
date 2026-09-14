@@ -53,8 +53,8 @@ export function DashboardView() {
   const { snapshot, patchSnapshot, syncNow } = useDataSync();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<(typeof BOOKING_STATUSES)[number]>("ALL");
-  const [from, setFrom] = useState(todayIso);
-  const [to, setTo] = useState(todayIso);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   useEffect(() => {
     if (!isPwa) return;
@@ -236,21 +236,6 @@ export function DashboardView() {
                 <button
                   type="button"
                   onClick={() => {
-                    setFrom(todayIso());
-                    setTo(todayIso());
-                  }}
-                  className={cn(
-                    "inline-flex h-7 items-center justify-center rounded-md px-3 text-xs font-medium transition-all duration-150",
-                    from === todayIso() && to === todayIso()
-                      ? "bg-card text-foreground font-semibold shadow-2xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
                     setFrom("");
                     setTo("");
                     setStatusFilter("ALL");
@@ -264,6 +249,21 @@ export function DashboardView() {
                   )}
                 >
                   All
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFrom(todayIso());
+                    setTo(todayIso());
+                  }}
+                  className={cn(
+                    "inline-flex h-7 items-center justify-center rounded-md px-3 text-xs font-medium transition-all duration-150",
+                    from === todayIso() && to === todayIso()
+                      ? "bg-card text-foreground font-semibold shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Today
                 </button>
               </div>
             </div>
