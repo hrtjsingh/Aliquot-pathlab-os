@@ -7,7 +7,7 @@ export default function WorklistLoading() {
     <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="Worklist"
-        description="All active orders, STAT first. Open an accession to enter results, verify, or release."
+        description="Active accessions sorted by priority. Released reports stay here until they are sent on WhatsApp or collected."
       />
       <Card>
         <CardContent className="p-0">

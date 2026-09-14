@@ -11,6 +11,11 @@ export default function PackagesLoading() {
         description="Create billed panels. The package charge is used on new orders, not the sum of member tests."
         actions={<Skeleton className="h-9 w-32 rounded-md" />}
       />
+
+      <div className="relative w-full lg:w-1/2 lg:max-w-md">
+        <Skeleton className="h-9 w-full rounded-md" />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <SkeletonTable

@@ -9,8 +9,13 @@ export default function PatientsLoading() {
       <PageHeader
         title="Patients"
         description="Master patient registry. Register a new patient, then create an accession from their row."
-        actions={<Skeleton className="h-9 w-40 rounded-md" />}
+        actions={<Skeleton className="h-9 w-36 rounded-md" />}
       />
+
+      <div className="relative w-full lg:w-1/2 lg:max-w-md">
+        <Skeleton className="h-9 w-full rounded-md" />
+      </div>
+
       <Card>
         <CardContent className="p-0">
           <SkeletonTable
@@ -20,7 +25,7 @@ export default function PatientsLoading() {
               { header: "Name", width: "w-36" },
               { header: "Gender", width: "w-16" },
               { header: "Age", width: "w-10" },
-              { header: "Actions", kind: "button", width: "w-28", align: "right" },
+              { header: "Actions", kind: "buttons", buttonWidths: ["w-20", "w-24", "w-20"], align: "right" },
             ]}
           />
         </CardContent>
