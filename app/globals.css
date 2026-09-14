@@ -7,8 +7,8 @@
   color-scheme: light;
   --radius: 0.5rem;
 
-  /* Clinical light: cool paper, ink navy, teal accent */
-  --background: #f4f6f7;
+  /* Clinical light: soft teal page wash; controls keep the old paper fill */
+  --background: #e0ecec;
   --foreground: #14181c;
   --card: #ffffff;
   --card-foreground: #14181c;
@@ -23,6 +23,7 @@
   --muted-foreground: #4f5c66;
   --accent: #0f766e;
   --accent-foreground: #ffffff;
+  --control: #f4f6f7;
 
   --destructive: #b3261e;
   --destructive-foreground: #ffffff;
@@ -70,6 +71,7 @@
   --muted-foreground: #9aa7ae;
   --accent: #2dd4bf;
   --accent-foreground: #0c1216;
+  --control: #141b20;
   --destructive: #f2554a;
   --destructive-foreground: #0c1216;
   --warning: #e0a021;
@@ -111,6 +113,7 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-control: var(--control);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--warning);

@@ -176,7 +176,11 @@ export function AppShell({
         {/* Desktop Top Header Bar with Top Tabs */}
         <div className="hidden md:flex h-14 items-center justify-between px-4 lg:px-6 max-w-7xl mx-auto w-full gap-4">
           <div className="flex min-w-0 flex-1 items-center gap-4 lg:gap-6">
-            <NavigationLink href="/dashboard" className="cursor-pointer hover:opacity-90 transition-opacity shrink-0">
+            <NavigationLink
+              href="/dashboard"
+              showPendingSpinner={false}
+              className="cursor-pointer hover:opacity-90 transition-opacity shrink-0"
+            >
               <BrandLockup compact />
             </NavigationLink>
             {desktopNavTabs}
@@ -252,7 +256,11 @@ export function AppShell({
             <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open menu">
               <Menu />
             </Button>
-            <NavigationLink href="/dashboard" className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity">
+            <NavigationLink
+              href="/dashboard"
+              showPendingSpinner={false}
+              className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity"
+            >
               <BrandMark className="size-7" />
               <span className="text-sm font-semibold">Aliquot</span>
             </NavigationLink>
@@ -274,7 +282,12 @@ export function AppShell({
           />
           <aside className="relative flex h-full w-64 flex-col overflow-hidden bg-sidebar shadow-lg">
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
-              <NavigationLink href="/dashboard" onClick={() => setMobileOpen(false)} className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity">
+              <NavigationLink
+                href="/dashboard"
+                showPendingSpinner={false}
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity"
+              >
                 <BrandMark className="size-7" />
                 <span className="text-sm font-semibold">Aliquot</span>
               </NavigationLink>

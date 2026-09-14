@@ -14,16 +14,18 @@ interface NavigationLinkProps {
   onClick?: () => void;
   "aria-label"?: string;
   title?: string;
+  /** When false, skip the inline spinner (e.g. brand/logo links). */
+  showPendingSpinner?: boolean;
 }
 
-function NavStatus({ children }: { children: ReactNode }) {
+function NavStatus({ children, showPendingSpinner = true }: { children: ReactNode; showPendingSpinner?: boolean }) {
   const { pending } = useLinkStatus();
   useReportLinkPending(pending);
 
   return (
     <>
       {children}
-      {pending ? (
+      {showPendingSpinner && pending ? (
         <Loader2
           aria-hidden
           className="ml-auto size-3.5 shrink-0 animate-spin text-accent"
@@ -33,7 +35,16 @@ function NavStatus({ children }: { children: ReactNode }) {
   );
 }
 
-export function NavigationLink({ href, children, className, active, onClick, "aria-label": ariaLabel, title }: NavigationLinkProps) {
+export function NavigationLink({
+  href,
+  children,
+  className,
+  active,
+  onClick,
+  "aria-label": ariaLabel,
+  title,
+  showPendingSpinner = true,
+}: NavigationLinkProps) {
   return (
     <Link
       href={href as never}
@@ -44,7 +55,7 @@ export function NavigationLink({ href, children, className, active, onClick, "ar
       aria-label={ariaLabel}
       title={title}
     >
-      <NavStatus>{children}</NavStatus>
+      <NavStatus showPendingSpinner={showPendingSpinner}>{children}</NavStatus>
     </Link>
   );
 }
