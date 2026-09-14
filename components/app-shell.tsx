@@ -80,13 +80,13 @@ export function AppShell({
             aria-label={item.label}
             title={item.label}
             className={cn(
-              "relative flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold transition-all duration-150 whitespace-nowrap lg:px-3 lg:py-1.5",
+              "relative flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-bold transition-all duration-150 whitespace-nowrap lg:px-3 lg:py-1.5",
               active
                 ? "bg-accent/12 text-accent shadow-2xs"
                 : "text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
             )}
           >
-            <item.icon className={cn("size-3.5 shrink-0", active ? "text-accent" : "text-muted-foreground")} />
+            <item.icon className={cn("size-4 shrink-0", active ? "text-accent" : "text-muted-foreground")} />
             <span className="sr-only lg:not-sr-only">{item.label}</span>
             {active ? (
               <span className="absolute bottom-0 left-1.5 right-1.5 h-0.5 rounded-full bg-accent lg:left-2 lg:right-2" />
@@ -108,9 +108,9 @@ export function AppShell({
             active={active}
             onClick={() => setMobileOpen(false)}
             className={cn(
-              "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
+              "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-base font-bold transition-all duration-150",
               active
-                ? "bg-sidebar-accent font-semibold text-sidebar-foreground shadow-2xs"
+                ? "bg-sidebar-accent text-sidebar-foreground shadow-2xs"
                 : "text-sidebar-muted hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
             )}
           >
