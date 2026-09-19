@@ -101,7 +101,7 @@ export async function createOrder(params: {
       accessionNo,
       patientId: params.patientId,
       branchId: user.branchId,
-      referringDoctor: params.referringDoctor?.trim() || "Dr. SELF",
+      referringDoctor: params.referringDoctor?.trim() || "SELF",
       priority: params.priority,
       status: OrderStatus.ORDER_CREATED,
       orderPanels: { create: params.panelIds.map((panelId) => ({ panelId })) },

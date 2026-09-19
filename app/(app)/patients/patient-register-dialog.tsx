@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ import {
 
 export function PatientRegisterDialog({
   onRegistered,
+  triggerTabIndex,
 }: {
   onRegistered?: (patient: {
     id: string;
@@ -34,6 +36,7 @@ export function PatientRegisterDialog({
     ageYears?: number | null;
     gender?: string;
   }) => void;
+  triggerTabIndex?: number;
 }) {
   const router = useRouter();
   const { patchSnapshot } = useDataSync();
@@ -48,7 +51,7 @@ export function PatientRegisterDialog({
     startTransition(async () => {
       const phone = String(formData.get("phone") ?? "") || null;
       const firstName = String(formData.get("firstName") ?? "");
-      const lastName = String(formData.get("lastName") ?? "") || null;
+      const lastName = null;
       const ageRaw = String(formData.get("ageYears") ?? "");
       const ageYears = ageRaw ? Number(ageRaw) : null;
       const selectedTitle = String(formData.get("title") ?? "");
@@ -145,7 +148,7 @@ export function PatientRegisterDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant={onRegistered ? "outline" : "default"} size={onRegistered ? "sm" : "default"}>
+        <Button variant={onRegistered ? "outline" : "default"} size={onRegistered ? "sm" : "default"} tabIndex={triggerTabIndex}>
           <UserPlus />
           {onRegistered ? "New patient" : "Register patient"}
         </Button>
@@ -159,38 +162,33 @@ export function PatientRegisterDialog({
         </DialogHeader>
         <form action={submit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex flex-col gap-1.5 w-full sm:w-[80px] shrink-0">
+            <div className="flex flex-col gap-1.5 w-full sm:w-[150px] shrink-0">
               <Label htmlFor="title">Title</Label>
-              <NativeSelect
-                id="title"
-                name="title"
-                required
-                className="w-full"
+              <input type="hidden" name="title" value={title} />
+              <Select
                 value={title}
-                onChange={(event) => {
-                  const next = event.target.value as typeof title;
-                  setTitle(next);
-                  const fromTitle = genderFromTitle(next);
+                onValueChange={(next) => {
+                  const val = next as typeof title;
+                  setTitle(val);
+                  const fromTitle = genderFromTitle(val);
                   if (fromTitle) setGender(fromTitle);
                 }}
               >
-                <option value="" disabled>
-                  Title
-                </option>
-                {PATIENT_TITLES.map((row) => (
-                  <option key={row.value} value={row.value}>
-                    {row.value}
-                  </option>
-                ))}
-              </NativeSelect>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Title" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 overflow-y-auto">
+                  {PATIENT_TITLES.map((row) => (
+                    <SelectItem key={row.value} value={row.value}>
+                      {row.value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-              <Label htmlFor="firstName">First name</Label>
-              <Input id="firstName" name="firstName" required />
-            </div>
-            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-              <Label htmlFor="lastName">Last name</Label>
-              <Input id="lastName" name="lastName" />
+              <Label htmlFor="firstName">Name</Label>
+              <Input id="firstName" name="firstName" required placeholder="Patient full name" />
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

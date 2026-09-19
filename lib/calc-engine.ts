@@ -347,6 +347,26 @@ export const CALC_RULES: Record<string, CalcRule> = {
       return { value: i.TLC! * (i.BASO_PCT! / 100) };
     },
   },
+  MENTZER_INDEX: {
+    key: "MENTZER_INDEX",
+    label: "Mentzer Index (Thalassemia differential)",
+    inputs: ["MCV", "RBC"],
+    outputUnit: "",
+    compute: (i) => {
+      if (!allPresent(i, ["MCV", "RBC"]) || i.RBC === 0) return { value: null, suppressed: true };
+      return { value: i.MCV! / i.RBC! };
+    },
+  },
+  NLR: {
+    key: "NLR",
+    label: "Neutrophil to Lymphocyte Ratio",
+    inputs: ["NEUT_PCT", "LYMPH_PCT"],
+    outputUnit: "",
+    compute: (i) => {
+      if (!allPresent(i, ["NEUT_PCT", "LYMPH_PCT"]) || i.LYMPH_PCT === 0) return { value: null, suppressed: true };
+      return { value: i.NEUT_PCT! / i.LYMPH_PCT! };
+    },
+  },
 };
 
 function evalArithmetic(expression: string, inputs: CalcInputs): CalcRuleResult {

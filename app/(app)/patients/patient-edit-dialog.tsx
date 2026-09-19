@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -37,10 +38,12 @@ export function PatientEditDialog({
   patient,
   trigger,
   onUpdated,
+  triggerTabIndex,
 }: {
   patient: EditablePatient;
   trigger?: ReactNode;
   onUpdated?: (updated: EditablePatient) => void;
+  triggerTabIndex?: number;
 }) {
   const router = useRouter();
   const { patchSnapshot } = useDataSync();
@@ -49,8 +52,9 @@ export function PatientEditDialog({
   const [error, setError] = useState<string | null>(null);
 
   const [title, setTitle] = useState<PatientTitle | "">(() => extractTitleFromName(patient.firstName));
-  const [firstName, setFirstName] = useState(() => stripTitlePrefix(patient.firstName));
-  const [lastName, setLastName] = useState(patient.lastName ?? "");
+  const [firstName, setFirstName] = useState(() =>
+    [stripTitlePrefix(patient.firstName), patient.lastName].filter(Boolean).join(" ").trim()
+  );
   const [ageYears, setAgeYears] = useState(patient.ageYears != null ? String(patient.ageYears) : "");
   const [gender, setGender] = useState<"MALE" | "FEMALE" | "OTHER">(
     (patient.gender as "MALE" | "FEMALE" | "OTHER") || "MALE"
@@ -64,6 +68,7 @@ export function PatientEditDialog({
     startTransition(async () => {
       try {
         formData.set("id", patient.id);
+        formData.set("lastName", "");
         const result = await updatePatient(formData);
         if (!result.ok) {
           setError(result.error);
@@ -121,8 +126,7 @@ export function PatientEditDialog({
         if (next) {
           const parsedTitle = extractTitleFromName(patient.firstName);
           setTitle(parsedTitle);
-          setFirstName(stripTitlePrefix(patient.firstName));
-          setLastName(patient.lastName ?? "");
+          setFirstName([stripTitlePrefix(patient.firstName), patient.lastName].filter(Boolean).join(" ").trim());
           setAgeYears(patient.ageYears != null ? String(patient.ageYears) : "");
           setGender((patient.gender as "MALE" | "FEMALE" | "OTHER") || "MALE");
           setPhone(patient.phone ?? "");
@@ -134,7 +138,7 @@ export function PatientEditDialog({
     >
       <DialogTrigger asChild>
         {trigger ?? (
-          <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs">
+          <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" tabIndex={triggerTabIndex}>
             <Pencil className="size-3.5" />
             Edit details
           </Button>
@@ -151,45 +155,39 @@ export function PatientEditDialog({
           <input type="hidden" name="id" value={patient.id} />
           
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex flex-col gap-1.5 w-full sm:w-[80px] shrink-0">
+            <div className="flex flex-col gap-1.5 w-full sm:w-[150px] shrink-0">
               <Label htmlFor="edit-title">Title</Label>
-              <NativeSelect
-                id="edit-title"
-                name="title"
-                className="w-full"
+              <input type="hidden" name="title" value={title} />
+              <Select
                 value={title}
-                onChange={(e) => {
-                  const next = e.target.value as typeof title;
-                  setTitle(next);
-                  const autoGender = genderFromTitle(next);
+                onValueChange={(next) => {
+                  const val = next as PatientTitle;
+                  setTitle(val);
+                  const autoGender = genderFromTitle(val);
                   if (autoGender) setGender(autoGender);
                 }}
               >
-                <option value="">Title</option>
-                {PATIENT_TITLES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.value}
-                  </option>
-                ))}
-              </NativeSelect>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Title" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 overflow-y-auto">
+                  {PATIENT_TITLES.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.value}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-              <Label htmlFor="edit-firstName">First name</Label>
+              <Label htmlFor="edit-firstName">Name</Label>
               <Input
                 id="edit-firstName"
                 name="firstName"
                 required
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
-              <Label htmlFor="edit-lastName">Last name</Label>
-              <Input
-                id="edit-lastName"
-                name="lastName"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
+                placeholder="Patient full name"
               />
             </div>
           </div>

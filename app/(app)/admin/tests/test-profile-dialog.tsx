@@ -23,6 +23,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
+import { FormulaTester } from "./formula-tester.client";
+
 function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -44,6 +46,7 @@ export function TestProfileDialog({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [formulaValue, setFormulaValue] = useState(test.formula ?? "");
   const resolved = resolveProfileText(test.code, test);
 
   function saveProfile(formData: FormData) {
@@ -154,9 +157,16 @@ export function TestProfileDialog({
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor={`formula-${test.id}`}>Formula</Label>
-                    <Input id={`formula-${test.id}`} name="formula" defaultValue={test.formula ?? ""} placeholder="[Creatinine] or EGFR" />
+                    <Input
+                      id={`formula-${test.id}`}
+                      name="formula"
+                      value={formulaValue}
+                      onChange={(e) => setFormulaValue(e.target.value)}
+                      placeholder="[Creatinine] or EGFR"
+                    />
                   </div>
                 </div>
+                <FormulaTester formula={formulaValue} />
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor={`shortName-${test.id}`}>Short name</Label>

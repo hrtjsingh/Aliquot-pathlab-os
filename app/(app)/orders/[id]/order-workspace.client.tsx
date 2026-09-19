@@ -29,6 +29,7 @@ export function OrderWorkspace({
         <div className="inline-flex w-fit rounded-md border border-border bg-secondary/70 p-1">
           <button
             type="button"
+            tabIndex={-1}
             onClick={() => setStage("tests")}
             className={cn(
               "inline-flex items-center gap-2 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors",
@@ -40,6 +41,7 @@ export function OrderWorkspace({
           </button>
           <button
             type="button"
+            tabIndex={-1}
             onClick={() => setStage("results")}
             className={cn(
               "inline-flex items-center gap-2 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors",

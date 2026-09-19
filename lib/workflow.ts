@@ -15,9 +15,16 @@ import { OrderStatus } from "@prisma/client";
 export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   ORDER_CREATED: [OrderStatus.SAMPLE_COLLECTED, OrderStatus.CANCELLED],
   SAMPLE_COLLECTED: [OrderStatus.SAMPLE_RECEIVED, OrderStatus.CANCELLED],
-  SAMPLE_RECEIVED: [OrderStatus.RESULT_ENTRY, OrderStatus.CANCELLED],
-  RESULT_ENTRY: [OrderStatus.TECH_VERIFIED, OrderStatus.CANCELLED],
-  TECH_VERIFIED: [OrderStatus.AUTHORIZED, OrderStatus.RESULT_ENTRY], // pathologist can bounce back for re-entry
+  SAMPLE_RECEIVED: [OrderStatus.RESULT_ENTRY, OrderStatus.RELEASED, OrderStatus.CANCELLED],
+  RESULT_ENTRY: [
+    OrderStatus.RELEASED,
+    OrderStatus.TECH_VERIFIED,
+    OrderStatus.AUTHORIZED,
+    OrderStatus.SENT_TO_CUSTOMER,
+    OrderStatus.COLLECTED_BY_CUSTOMER,
+    OrderStatus.CANCELLED,
+  ],
+  TECH_VERIFIED: [OrderStatus.RELEASED, OrderStatus.AUTHORIZED, OrderStatus.RESULT_ENTRY], // pathologist can bounce back for re-entry
   AUTHORIZED: [OrderStatus.RELEASED],
   RELEASED: [OrderStatus.SENT_TO_CUSTOMER, OrderStatus.COLLECTED_BY_CUSTOMER, OrderStatus.AMENDED],
   SENT_TO_CUSTOMER: [OrderStatus.COLLECTED_BY_CUSTOMER, OrderStatus.AMENDED],
@@ -69,7 +76,7 @@ export function canSendReportWhatsApp(status: OrderStatus) {
 }
 
 export function canMarkCollected(status: OrderStatus) {
-  return status === OrderStatus.RELEASED || status === OrderStatus.SENT_TO_CUSTOMER;
+  return isCustomerVisibleReport(status);
 }
 
 export function isHandoverDone(status: OrderStatus) {
@@ -79,11 +86,11 @@ export function isHandoverDone(status: OrderStatus) {
 // Which role is permitted to *perform* each transition.
 export const TRANSITION_ROLE: Record<string, string[]> = {
   SAMPLE_COLLECTED: ["PHLEBOTOMIST", "FRONTDESK", "ADMIN"],
-  SAMPLE_RECEIVED: ["TECHNOLOGIST", "ADMIN"],
-  RESULT_ENTRY: ["TECHNOLOGIST", "ADMIN"],
+  SAMPLE_RECEIVED: ["TECHNOLOGIST", "ADMIN", "FRONTDESK"],
+  RESULT_ENTRY: ["TECHNOLOGIST", "ADMIN", "FRONTDESK"],
   TECH_VERIFIED: ["TECHNOLOGIST", "ADMIN"],
   AUTHORIZED: ["PATHOLOGIST", "ADMIN"],
-  RELEASED: ["PATHOLOGIST", "ADMIN", "FRONTDESK"],
+  RELEASED: ["PATHOLOGIST", "ADMIN", "FRONTDESK", "TECHNOLOGIST"],
   SENT_TO_CUSTOMER: ["FRONTDESK", "ADMIN", "PATHOLOGIST", "TECHNOLOGIST"],
   COLLECTED_BY_CUSTOMER: ["FRONTDESK", "ADMIN", "PATHOLOGIST", "TECHNOLOGIST"],
   CANCELLED: ["ADMIN", "FRONTDESK"],

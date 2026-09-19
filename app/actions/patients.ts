@@ -10,9 +10,9 @@ import { asMoney } from "@/lib/money";
 import { isCustomerVisibleReport } from "@/lib/workflow";
 
 const PatientSchema = z.object({
-  title: z.enum(["Mr", "Mrs", "Miss"]),
+  title: z.string().optional(),
   mrn: z.string().optional(),
-  firstName: z.string().min(1, "First name is required."),
+  firstName: z.string().min(1, "Name is required."),
   lastName: z.string().optional(),
   ageYears: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),
@@ -174,8 +174,8 @@ export async function getPatientOrders(patientId: string) {
 
 const UpdatePatientSchema = z.object({
   id: z.string().min(1),
-  title: z.enum(["Mr", "Mrs", "Miss"]).optional(),
-  firstName: z.string().min(1, "First name is required."),
+  title: z.string().optional(),
+  firstName: z.string().min(1, "Name is required."),
   lastName: z.string().optional(),
   ageYears: z.preprocess(
     (value) => (value === "" || value == null ? undefined : value),

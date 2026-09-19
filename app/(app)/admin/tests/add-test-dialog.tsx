@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { createTest } from "@/app/actions/admin";
+import { FormulaTester } from "./formula-tester.client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,10 +20,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-export function AddTestDialog() {
+export function AddTestDialog({ tests = [] }: { tests?: Array<{ name: string; code: string }> }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [formulaValue, setFormulaValue] = useState("");
 
   function submit(formData: FormData) {
     startTransition(async () => {
@@ -34,6 +36,7 @@ export function AddTestDialog() {
         }
         toast.success("Test added to the catalog.");
         setOpen(false);
+        setFormulaValue("");
         router.refresh();
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not add this test. Check that the code is unique.");
@@ -126,9 +129,16 @@ export function AddTestDialog() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="formula">Formula</Label>
-              <Input id="formula" name="formula" placeholder="[Hemoglobin] * 3 or EGFR" />
+              <Input
+                id="formula"
+                name="formula"
+                placeholder="[Hemoglobin] * 3 or EGFR"
+                value={formulaValue}
+                onChange={(e) => setFormulaValue(e.target.value)}
+              />
             </div>
           </div>
+          <FormulaTester formula={formulaValue} tests={tests} />
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="low">Default range low</Label>

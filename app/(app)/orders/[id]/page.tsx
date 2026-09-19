@@ -15,7 +15,7 @@ import { asMoney } from "@/lib/money";
 import { derivationRuleToFormula } from "@/lib/test-deps";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText, QrCode } from "lucide-react";
+import { Download, FileText, QrCode } from "lucide-react";
 import { RemoveReportButton } from "./remove-report-button";
 import { ensurePublicReportToken, publicReportPath } from "@/lib/public-report";
 import { isCustomerVisibleReport } from "@/lib/workflow";
@@ -127,16 +127,24 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <PriorityBadge priority={order.priority} />
             <StatusBadge status={order.status} />
             {isCustomerVisibleReport(order.status) ? (
-              <Link href={`/orders/${id}/report` as never}>
-                <Button size="sm">
-                  <FileText />
-                  Lab preview
+              <>
+                <Link href={`/orders/${id}/report` as never} tabIndex={-1}>
+                  <Button size="sm" tabIndex={-1}>
+                    <FileText />
+                    Lab preview
+                  </Button>
+                </Link>
+                <Button asChild size="sm" variant="outline" tabIndex={-1}>
+                  <a href={`/api/orders/${id}/report.pdf`} target="_blank" rel="noreferrer" tabIndex={-1}>
+                    <Download />
+                    Download PDF
+                  </a>
                 </Button>
-              </Link>
+              </>
             ) : null}
             {patientReportHref ? (
-              <Button asChild size="sm" variant="outline">
-                <a href={patientReportHref} target="_blank" rel="noreferrer">
+              <Button asChild size="sm" variant="outline" tabIndex={-1}>
+                <a href={patientReportHref} target="_blank" rel="noreferrer" tabIndex={-1}>
                   <QrCode />
                   Open patient page
                 </a>
@@ -171,7 +179,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <OrderItemsEditor
             orderId={id}
             patientId={order.patientId}
-            referringDoctor={order.referringDoctor ?? "Dr. SELF"}
+            referringDoctor={order.referringDoctor ?? "SELF"}
             discount={discount}
             amountPaid={amountPaid}
             testIds={order.orderTests.map((row) => row.testId)}
@@ -190,7 +198,14 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                <ResultTable orderId={id} rows={rows} editable={editable} />
+                <ResultTable
+                  orderId={id}
+                  rows={rows}
+                  editable={editable}
+                  status={order.status}
+                  accessionNo={order.accessionNo}
+                  phone={order.patient.phone}
+                />
               </CardContent>
             </Card>
 

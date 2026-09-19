@@ -1,18 +1,21 @@
 "use client";
 
-import { Fragment, useMemo, useState, useTransition, type KeyboardEvent } from "react";
+import { Fragment, useMemo, useState, useTransition, useEffect, useRef, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
+import { OrderStatus } from "@prisma/client";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
-import { saveManualResult } from "@/app/actions/results";
+import { saveManualResult, releaseReport } from "@/app/actions/results";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { TestProfileDialog } from "@/app/(app)/admin/tests/test-profile-dialog";
 import type { TestProfile } from "@/lib/test-profile";
 import { Button } from "@/components/ui/button";
-import { BookOpen, ChevronDown, ChevronRight } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react";
 import { previewFlag } from "@/lib/flagging";
+import { HandoverActions } from "./handover-actions.client";
+import { isCustomerVisibleReport } from "@/lib/workflow";
 
 type ResultRow = {
   testId: string;
@@ -40,14 +43,45 @@ const FLAG_BADGE: Record<string, { variant: "destructive" | "warning" | "outline
   ABNORMAL: { variant: "warning", label: "Abnormal" },
 };
 
-export function ResultTable({ orderId, rows, editable }: { orderId: string; rows: ResultRow[]; editable: boolean }) {
+export function ResultTable({
+  orderId,
+  rows,
+  editable,
+  status,
+  accessionNo,
+  phone,
+}: {
+  orderId: string;
+  rows: ResultRow[];
+  editable: boolean;
+  status?: OrderStatus;
+  accessionNo?: string;
+  phone?: string | null;
+}) {
   const router = useRouter();
+  const tableRef = useRef<HTMLTableElement | null>(null);
   const [values, setValues] = useState<Record<string, string>>(
     Object.fromEntries(rows.map((r) => [r.testId, r.numericValue != null ? String(r.numericValue) : (r.textValue ?? "")]))
   );
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [, startTransition] = useTransition();
+
+  const hasAutoFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (editable && !hasAutoFocusedRef.current && tableRef.current) {
+      hasAutoFocusedRef.current = true;
+      const timer = setTimeout(() => {
+        const firstInput = tableRef.current?.querySelector<HTMLInputElement>('input[data-result-input="true"]:not(:disabled)');
+        if (firstInput) {
+          firstInput.focus();
+          firstInput.select();
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [editable]);
 
   const toggleCategory = (cat: string) => {
     setCollapsedCategories((prev) => {
@@ -71,8 +105,34 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
     return Array.from(map.entries());
   }, [rows]);
 
+  const [isReleasing, startReleaseTransition] = useTransition();
+
+  function handleReleaseReport() {
+    startReleaseTransition(async () => {
+      try {
+        if (isBrowserOffline()) {
+          await enqueueOp({ type: "releaseReport", orderId });
+          toast.success("Queued. Will release report when online.");
+          router.push(`/orders/${orderId}/report` as never);
+          return;
+        }
+        await releaseReport(orderId);
+        toast.success("Report released.");
+        router.push(`/orders/${orderId}/report` as never);
+      } catch (error) {
+        if (isNetworkError(error)) {
+          await enqueueOp({ type: "releaseReport", orderId });
+          toast.success("Queued. Will release report when online.");
+          router.push(`/orders/${orderId}/report` as never);
+          return;
+        }
+        toast.error(error instanceof Error ? error.message : "Could not release report.");
+      }
+    });
+  }
+
   function focusAdjacentResult(current: HTMLInputElement, direction: 1 | -1) {
-    const root = current.closest("table");
+    const root = tableRef.current ?? current.closest("table");
     if (!root) return;
     const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('input[data-result-input="true"]:not(:disabled)'));
     const index = inputs.indexOf(current);
@@ -82,13 +142,22 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
       next.select();
       return;
     }
+    if (direction === 1) {
+      const releaseBtn = document.querySelector<HTMLButtonElement>('button[data-release-btn="true"]:not(:disabled)');
+      if (releaseBtn) {
+        releaseBtn.focus();
+        return;
+      }
+    }
     current.blur();
   }
 
   function onResultKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
-    event.preventDefault();
-    focusAdjacentResult(event.currentTarget, event.shiftKey ? -1 : 1);
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Enter" || event.key === "Tab") {
+      event.preventDefault();
+      focusAdjacentResult(event.currentTarget, event.shiftKey ? -1 : 1);
+    }
   }
 
   function commit(row: ResultRow, raw: string) {
@@ -128,8 +197,12 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
     });
   }
 
+  const canRelease = editable || status === "SAMPLE_RECEIVED" || status === "RESULT_ENTRY" || status === "AUTHORIZED";
+  const canHandover = status ? isCustomerVisibleReport(status) : false;
+
   return (
-    <Table>
+    <div className="flex flex-col">
+      <Table ref={tableRef}>
       <TableHeader>
         <TableRow>
           <TableHead>Parameter</TableHead>
@@ -148,7 +221,7 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
                 className="bg-secondary/60 hover:bg-secondary/90 cursor-pointer select-none transition-colors border-b border-border/50"
                 onClick={() => toggleCategory(category)}
                 role="button"
-                tabIndex={0}
+                tabIndex={-1}
                 aria-expanded={!isCollapsed}
                 aria-label={`Toggle ${category.replaceAll("_", " ")} category`}
                 onKeyDown={(e) => {
@@ -197,7 +270,7 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
                           <TestProfileDialog
                             test={row.profile}
                             trigger={
-                              <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={`${row.name} profile`}>
+                              <Button type="button" tabIndex={-1} size="icon" variant="ghost" className="size-7" aria-label={`${row.name} profile`}>
                                 <BookOpen />
                               </Button>
                             }
@@ -242,5 +315,41 @@ export function ResultTable({ orderId, rows, editable }: { orderId: string; rows
         })}
       </TableBody>
     </Table>
+    {(canRelease || canHandover) && (
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t p-4 bg-muted/20">
+        {canRelease ? (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Press <kbd className="px-1 py-0.5 rounded border bg-muted font-mono text-[10px]">Enter</kbd> to save &amp; move to next field. After the last field, press <kbd className="px-1 py-0.5 rounded border bg-muted font-mono text-[10px]">Enter</kbd> to release report.
+            </p>
+            <Button
+              type="button"
+              data-release-btn="true"
+              disabled={isReleasing}
+              onClick={handleReleaseReport}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-2xs ml-auto"
+            >
+              {isReleasing ? "Releasing report..." : "Release report"}
+            </Button>
+          </>
+        ) : canHandover && status && accessionNo ? (
+          <>
+            <div className="flex items-center gap-2 text-xs font-medium text-emerald-600">
+              <CheckCircle2 className="size-4" />
+              Report released
+            </div>
+            <HandoverActions
+              orderId={orderId}
+              accessionNo={accessionNo}
+              phone={phone ?? null}
+              status={status}
+              onSent={() => router.refresh()}
+              onCollected={() => router.refresh()}
+            />
+          </>
+        ) : null}
+      </div>
+    )}
+  </div>
   );
 }
