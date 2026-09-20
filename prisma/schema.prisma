@@ -206,6 +206,7 @@ model Branch {
   letterheadUrl String?
   nablNo       String?
   isoNo        String?
+  inrIsi       Float    @default(1.0) // reagent-lot ISI for INR = (PT / mean PT) ^ ISI
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -298,6 +299,8 @@ model Test {
   price           Decimal? @db.Decimal(10, 2)
   isDerived       Boolean  @default(false) // computed by the calc engine, not entered
   derivationRule  String? // key into lib/calc-engine.ts rule registry
+  sortOrder       Int      @default(0) // catalog / report sequence within the lab
+  hideOnBooking   Boolean  @default(false) // book via package/group, hide on a-la-carte booking
   autoVerifyEligible Boolean @default(false) // can auto-release if in-range & no delta flag
   description     String? // clinical profile: what the test measures and when it is used
   collectionNotes String? // fasting, tube type, handling
@@ -313,6 +316,7 @@ model Test {
 
   @@unique([vendorId, code])
   @@index([vendorId])
+  @@index([vendorId, sortOrder])
 }
 
 // Reference ranges resolve by test + age band + gender + (optional) condition.
@@ -463,11 +467,12 @@ model OrderPanel {
 }
 
 model OrderTest {
-  id       String @id @default(cuid())
-  orderId  String
-  order    Order  @relation(fields: [orderId], references: [id])
-  testId   String
-  test     Test   @relation(fields: [testId], references: [id])
+  id        String @id @default(cuid())
+  orderId   String
+  order     Order  @relation(fields: [orderId], references: [id])
+  testId    String
+  test      Test   @relation(fields: [testId], references: [id])
+  sortOrder Int    @default(0) // snapshot of print/entry sequence at booking
 
   @@unique([orderId, testId])
 }

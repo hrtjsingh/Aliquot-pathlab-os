@@ -8,9 +8,10 @@ import { OrderStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { newPublicReportToken } from "@/lib/public-report";
 import { computeOrderCharge } from "@/lib/order-pricing";
-import { expandDerivedInputs } from "@/lib/test-deps";
+import { expandDerivedInputs, expandPanelBundles } from "@/lib/test-deps";
 import { asMoney, dueAmount } from "@/lib/money";
 import { writeOrderBilling, readOrderBilling } from "@/lib/order-billing-db";
+import { resolveOrderLineSort } from "@/lib/test-order";
 
 async function nextAccessionNo(vendorId: string): Promise<string> {
   const today = new Date();
@@ -28,18 +29,21 @@ async function catalogForVendor(vendorId: string) {
   const [panels, tests] = await Promise.all([
     prisma.panel.findMany({
       where: { vendorId, active: true },
-      include: { panelTests: { select: { testId: true } } },
+      include: { panelTests: { select: { testId: true, sortOrder: true }, orderBy: { sortOrder: "asc" } } },
     }),
     prisma.test.findMany({
       where: { vendorId, active: true },
-      select: { id: true, code: true, name: true, price: true, derivationRule: true },
+      select: { id: true, code: true, name: true, price: true, derivationRule: true, sortOrder: true, category: true, hideOnBooking: true },
     }),
   ]);
   return {
     panels: panels.map((panel) => ({
       id: panel.id,
+      name: panel.name,
+      code: panel.code,
       price: asMoney(panel.price),
       testIds: panel.panelTests.map((member) => member.testId),
+      members: panel.panelTests.map((member) => ({ testId: member.testId, sortOrder: member.sortOrder })),
     })),
     tests: tests.map((test) => ({
       id: test.id,
@@ -47,6 +51,9 @@ async function catalogForVendor(vendorId: string) {
       name: test.name,
       price: asMoney(test.price),
       derivationRule: test.derivationRule,
+      sortOrder: test.sortOrder,
+      category: test.category,
+      hideOnBooking: test.hideOnBooking,
     })),
   };
 }
@@ -60,13 +67,20 @@ async function resolveSelection(vendorId: string, testIds: string[], panelIds: s
     }
   }
   const panelTests = catalog.panels.filter((panel) => panelIds.includes(panel.id)).flatMap((panel) => panel.testIds);
-  const expanded = expandDerivedInputs([...testIds, ...panelTests], catalog.tests);
+  const bundled = expandPanelBundles(testIds, catalog.tests, catalog.panels);
+  const expanded = expandDerivedInputs([...bundled, ...panelTests], catalog.tests);
   const knownTests = new Set(catalog.tests.map((test) => test.id));
   if (expanded.some((id) => !knownTests.has(id))) {
     return { ok: false as const, error: "One or more tests were not found in this lab." };
   }
+  const ordered = resolveOrderLineSort({
+    testIds: expanded,
+    tests: catalog.tests,
+    panels: catalog.panels,
+    selectedPanelIds: panelIds,
+  });
   const totalCharge = computeOrderCharge(catalog.panels, catalog.tests, panelIds, expanded);
-  return { ok: true as const, allTestIds: expanded, totalCharge };
+  return { ok: true as const, allTestIds: ordered.map((row) => row.testId), lines: ordered, totalCharge };
 }
 
 export async function createOrder(params: {
@@ -105,7 +119,7 @@ export async function createOrder(params: {
       priority: params.priority,
       status: OrderStatus.ORDER_CREATED,
       orderPanels: { create: params.panelIds.map((panelId) => ({ panelId })) },
-      orderTests: { create: resolved.allTestIds.map((testId) => ({ testId })) },
+      orderTests: { create: resolved.lines.map((line) => ({ testId: line.testId, sortOrder: line.sortOrder })) },
     },
   });
   await writeOrderBilling(order.id, { totalCharge: resolved.totalCharge, discount, amountPaid });
@@ -199,7 +213,7 @@ export async function updateOrderItems(params: {
       data: {
         referringDoctor: params.referringDoctor?.trim() || order.referringDoctor,
         orderPanels: { create: params.panelIds.map((panelId) => ({ panelId })) },
-        orderTests: { create: resolved.allTestIds.map((testId) => ({ testId })) },
+        orderTests: { create: resolved.lines.map((line) => ({ testId: line.testId, sortOrder: line.sortOrder })) },
       },
     }),
   ]);
@@ -281,8 +295,8 @@ export async function getOrderDetail(orderId: string) {
     include: {
       patient: true,
       branch: true,
-      orderTests: { include: { test: { include: { referenceRanges: true, criticalThresholds: true, panelTests: { include: { panel: true } } } } } },
-      orderPanels: { include: { panel: { include: { panelTests: true } } } },
+      orderTests: { include: { test: { include: { referenceRanges: true, criticalThresholds: true, panelTests: { include: { panel: true } } } } }, orderBy: { sortOrder: "asc" } },
+      orderPanels: { include: { panel: { include: { panelTests: { orderBy: { sortOrder: "asc" } } } } } },
       results: { include: { test: true, enteredBy: true, verifiedBy: true } },
       authorizedBy: true,
       criticalCalls: true,

@@ -14,8 +14,10 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { resolveReferenceRange, ageInDays } from "@/lib/reference-range";
-import { computeFlag } from "@/lib/flagging";
+import { resolveReferenceRange, ageInDays, formatRangeText } from "@/lib/reference-range";
+import { computeFlag, computeQualitativeFlag } from "@/lib/flagging";
+import { cascadeDerivedResults } from "@/app/actions/results";
+import { roundNumeric } from "@/lib/format-result";
 
 export type AnalyzerResultMessage = {
   instrumentId: string;
@@ -77,28 +79,36 @@ export async function ingestAnalyzerMessage(msg: AnalyzerResultMessage) {
   });
   const critical = test.criticalThresholds.find((c) => (!c.gender || c.gender === order.patient.gender) && days >= c.ageMinDays && days <= c.ageMaxDays) ?? null;
 
-  const flag = computeFlag({ numericValue: msg.numericValue ?? null, range, criticalThreshold: critical });
+  const numericValue = msg.numericValue != null ? roundNumeric(msg.numericValue, test.decimalPrecision) : null;
+  const flag =
+    numericValue != null
+      ? computeFlag({ numericValue, range, criticalThreshold: critical })
+      : computeQualitativeFlag(msg.textValue, formatRangeText(range));
 
-  return prisma.result.upsert({
-    where: { id: `analyzer:${order.id}:${test.id}` }, // deterministic id keeps re-transmits idempotent
+  const saved = await prisma.result.upsert({
+    where: { id: `analyzer:${order.id}:${test.id}` },
     create: {
       id: `analyzer:${order.id}:${test.id}`,
       orderId: order.id,
       testId: test.id,
-      numericValue: msg.numericValue ?? null,
+      numericValue,
       textValue: msg.textValue ?? null,
       unit: msg.unit ?? test.unit,
+      referenceRangeText: formatRangeText(range),
       flag,
       status: "ENTERED",
       instrumentId: msg.instrumentId,
       enteredAt: new Date(msg.observedAt),
     },
     update: {
-      numericValue: msg.numericValue ?? null,
+      numericValue,
       textValue: msg.textValue ?? null,
+      referenceRangeText: formatRangeText(range),
       flag,
       instrumentId: msg.instrumentId,
       enteredAt: new Date(msg.observedAt),
     },
   });
+  await cascadeDerivedResults(order.id, order.vendorId);
+  return saved;
 }

@@ -1,4 +1,5 @@
 import type { ReportData } from "@/lib/report-pdf";
+import { assignPrintGroups } from "@/lib/result-groups";
 
 export function calcAge(dob: Date | null, ageYears: number | null, ageMonths: number | null): string {
   if (dob) {
@@ -43,14 +44,41 @@ export function toReportData(order: {
     unit: string | null;
     referenceRangeText: string | null;
     flag: string;
+    interpretiveComment: string | null;
     pathologistNote: string | null;
     grossDescription: string | null;
     microscopicDescription: string | null;
     diagnosis: string | null;
     organismPanel: unknown;
-    test: { name: string; category: string };
+    testId?: string;
+    test: { name: string; category: string; method?: string | null; decimalPrecision?: number | null; sortOrder?: number | null };
+  }>;
+  orderTests?: Array<{ testId: string; sortOrder: number }>;
+  orderPanels?: Array<{
+    panel: {
+      code: string;
+      name: string;
+      description?: string | null;
+      panelTests: Array<{ testId: string; sortOrder?: number }>;
+    };
   }>;
 }): ReportData {
+  const lineOrder = new Map((order.orderTests ?? []).map((row) => [row.testId, row.sortOrder]));
+  const printable = order.results
+    .filter((r) => !r.isDerived || r.numericValue != null || Boolean(r.textValue))
+    .slice()
+    .sort((a, b) => (lineOrder.get(a.testId ?? "") ?? a.test.sortOrder ?? 0) - (lineOrder.get(b.testId ?? "") ?? b.test.sortOrder ?? 0));
+
+  const grouped = assignPrintGroups(
+    printable.map((r) => ({
+      testId: r.testId ?? r.test.name,
+      category: r.test.category,
+      name: r.test.name,
+      result: r,
+    })),
+    order.orderPanels ?? []
+  );
+
   return {
     branch: {
       name: order.branch.name,
@@ -75,22 +103,30 @@ export function toReportData(order: {
     pathologistName: order.authorizedBy ? `Dr. ${order.authorizedBy.name}` : null,
     pathologistRegNo: order.authorizedBy?.registrationNo ?? null,
     isAmended: order.isAmendment,
-    results: order.results
-      .filter((r) => !r.isDerived || r.numericValue != null)
-      .map((r) => ({
+    results: grouped.map((row) => {
+        const r = row.result;
+        return {
         testName: r.test.name,
         category: r.test.category,
+        groupKey: row.groupKey,
+        groupLabel: row.groupLabel,
+        groupDescription: row.groupDescription,
+        method: r.test.method ?? null,
+        memberOrder: row.memberOrder,
         numericValue: r.numericValue,
         textValue: r.textValue,
         unit: r.unit,
         referenceRangeText: r.referenceRangeText,
         flag: r.flag,
         isDerived: r.isDerived,
+        decimalPrecision: r.test.decimalPrecision ?? 2,
         pathologistNote: r.pathologistNote,
+        comment: r.interpretiveComment ?? r.pathologistNote,
         grossDescription: r.grossDescription,
         microscopicDescription: r.microscopicDescription,
         diagnosis: r.diagnosis,
         organismPanel: r.organismPanel,
-      })),
+      };
+      }),
   };
 }

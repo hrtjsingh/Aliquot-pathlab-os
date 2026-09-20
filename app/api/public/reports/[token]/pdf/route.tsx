@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { LabReportDocument } from "@/lib/report-pdf";
-import { parseReportLayout } from "@/lib/report-layout";
+import { getReportLayoutForBranch } from "@/app/actions/lab";
 import { toReportData } from "@/lib/report-data";
-import { prisma } from "@/lib/prisma";
 import { qrPngDataUrl } from "@/lib/qr";
 import { absolutePublicReportUrl, findReleasedOrderByToken, reportOriginFromRequest } from "@/lib/public-report";
 import { logAudit } from "@/lib/audit";
@@ -15,10 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ toke
   const order = await findReleasedOrderByToken(token);
   if (!order) return NextResponse.json({ error: "Report is not available." }, { status: 404 });
 
-  const template = await prisma.reportTemplate.findFirst({
-    where: { branchId: order.branchId, vendorId: order.vendorId, isDefault: true },
-  });
-  const layout = parseReportLayout(template?.layoutJson);
+  const layout = await getReportLayoutForBranch(order.branchId, order.vendorId);
   const data = toReportData(order);
 
   if (layout.showQrCode) {

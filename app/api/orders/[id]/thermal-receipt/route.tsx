@@ -61,7 +61,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       margin: 0;
     }
     body {
-      font-family: 'Courier New', Courier, monospace, sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       width: 72mm;
       margin: 0 auto;
       padding: 4mm 2mm;
@@ -84,7 +84,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
     .btn-print {
       display: block; width: 100%; padding: 8px; background: #0284c7; color: white;
-      text-align: center; font-family: sans-serif; font-weight: bold;
+      text-align: center; font-family: Arial, Helvetica, sans-serif; font-weight: bold;
       border: none; border-radius: 4px; cursor: pointer; margin-bottom: 10px;
     }
   </style>

@@ -29,6 +29,8 @@ export type LabSnapshot = {
     price: number;
     derivationRule: string | null;
     unit: string | null;
+    sortOrder: number;
+    hideOnBooking: boolean;
   }>;
   worklist: Array<{
     id: string;
@@ -94,12 +96,12 @@ export async function getLabSnapshot(): Promise<LabSnapshot> {
     prisma.panel.findMany({
       where: { vendorId, active: true },
       orderBy: { name: "asc" },
-      select: { id: true, code: true, name: true, category: true, price: true, panelTests: { select: { testId: true } } },
+      select: { id: true, code: true, name: true, category: true, price: true, panelTests: { select: { testId: true, sortOrder: true }, orderBy: { sortOrder: "asc" } } },
     }),
     prisma.test.findMany({
       where: { vendorId, active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, code: true, name: true, category: true, isDerived: true, price: true, derivationRule: true, unit: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, code: true, name: true, category: true, isDerived: true, price: true, derivationRule: true, unit: true, sortOrder: true, hideOnBooking: true },
     }),
     prisma.order.findMany({
       where: {

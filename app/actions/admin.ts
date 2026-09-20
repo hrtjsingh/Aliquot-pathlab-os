@@ -34,6 +34,7 @@ export async function createTest(formData: FormData) {
   const parsedFormula = formulaToDerivationRule(formula, siblings);
   if (!parsedFormula.ok) return { ok: false as const, error: parsedFormula.error };
 
+  const last = await prisma.test.findFirst({ where: { vendorId }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
   const test = await prisma.test.create({
     data: {
       vendorId,
@@ -51,6 +52,7 @@ export async function createTest(formData: FormData) {
       price: asMoney(price),
       isDerived: Boolean(parsedFormula.rule),
       derivationRule: parsedFormula.rule,
+      sortOrder: (last?.sortOrder ?? 0) + 1,
     },
   });
 
@@ -152,7 +154,7 @@ export async function addReferenceRange(formData: FormData) {
       low,
       high,
       isDefault,
-      ageMinDays: 6570,
+      ageMinDays: 0,
       ageMaxDays: 43800,
     },
   });

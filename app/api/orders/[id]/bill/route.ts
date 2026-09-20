@@ -1,9 +1,7 @@
-import React from "react";
 import { NextRequest, NextResponse } from "next/server";
 import { requireTenant } from "@/lib/rbac";
-import { renderToBuffer } from "@react-pdf/renderer";
-import { CashReceiptDocument } from "@/lib/receipt-pdf";
 import { fetchCashReceipt } from "@/lib/cash-receipt";
+import { renderCashBillHtml } from "@/lib/bill-html";
 import { logAudit } from "@/lib/audit";
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -11,8 +9,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const receipt = await fetchCashReceipt(id, user.vendorId);
   if (!receipt) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-
-  const buffer = await renderToBuffer(<CashReceiptDocument layout={receipt.layout} data={receipt.data} />);
 
   await logAudit({
     userId: user.userId,
@@ -23,10 +19,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     entityId: id,
   });
 
-  return new NextResponse(buffer as unknown as BodyInit, {
+  return new NextResponse(renderCashBillHtml(receipt.data, receipt.layout), {
     headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="receipt-${receipt.data.accessionNo}.pdf"`,
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "private, no-store",
     },
   });
 }

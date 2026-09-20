@@ -17,9 +17,11 @@ import { useDataSync } from "@/components/data-sync";
 import { createOrder } from "@/app/actions/orders";
 import { enqueueOp, isBrowserOffline, isNetworkError } from "@/lib/offline/outbox";
 import { computeOrderCharge } from "@/lib/order-pricing";
-import { expandDerivedInputs } from "@/lib/test-deps";
+import { expandDerivedInputs, expandPanelBundles } from "@/lib/test-deps";
 import { asMoney, dueAmount, formatInr } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { compareByPrintOrder, uniqueCategoriesInPrintOrder } from "@/lib/test-order";
+import { openBillPopupPlaceholder, showBillInPopup } from "@/lib/open-bill-popup";
 
 type Panel = { id: string; code: string; name: string; category: string; price: number; testIds: string[] };
 type Test = {
@@ -31,6 +33,8 @@ type Test = {
   price: number;
   derivationRule: string | null;
   unit: string | null;
+  sortOrder?: number;
+  hideOnBooking?: boolean;
 };
 type Patient = {
   id: string;
@@ -165,7 +169,7 @@ export function OrderForm({
 
   const selectedPatient = patients.find((p) => p.id === patientId);
   const categories = useMemo(
-    () => Array.from(new Set([...panels.map((p) => p.category), ...tests.map((t) => t.category)])).sort(),
+    () => uniqueCategoriesInPrintOrder([...panels, ...tests]),
     [panels, tests]
   );
 
@@ -179,9 +183,10 @@ export function OrderForm({
 
   const effectiveTests = useMemo(() => {
     const base = new Set([...coveredByPanels, ...selectedTests]);
-    const expanded = expandDerivedInputs(Array.from(base), tests);
+    const bundled = expandPanelBundles(Array.from(base), tests, panels);
+    const expanded = expandDerivedInputs(bundled, tests);
     return new Set(expanded);
-  }, [coveredByPanels, selectedTests, tests]);
+  }, [coveredByPanels, selectedTests, tests, panels]);
 
   const extraTestIds = useMemo(
     () => Array.from(selectedTests).filter((id) => !coveredByPanels.has(id)),
@@ -213,10 +218,14 @@ type SearchCatalogItem =
     return true;
   });
 
-  const visibleTests = tests.filter((test) => {
-    if (categoryFilter !== "ALL" && test.category !== categoryFilter) return false;
-    return true;
-  });
+  const visibleTests = tests
+    .filter((test) => {
+      if (test.hideOnBooking && !selectedTests.has(test.id)) return false;
+      if (categoryFilter !== "ALL" && test.category !== categoryFilter) return false;
+      return true;
+    })
+    .slice()
+    .sort(compareByPrintOrder);
 
   const visibleCatalogItems = useMemo(() => {
     const q = catalogQuery.trim();
@@ -227,7 +236,7 @@ type SearchCatalogItem =
       .map((p) => ({ kind: "PANEL", id: p.id, code: p.code, name: p.name, category: p.category, price: p.price }));
 
     const testItems: SearchCatalogItem[] = tests
-      .filter((t) => categoryFilter === "ALL" || t.category === categoryFilter)
+      .filter((t) => !t.hideOnBooking && (categoryFilter === "ALL" || t.category === categoryFilter))
       .map((t) => ({ kind: "TEST", id: t.id, code: t.code, name: t.name, category: t.category, price: t.price, isDerived: t.isDerived }));
 
     return [...panelItems, ...testItems]
@@ -352,17 +361,21 @@ type SearchCatalogItem =
       return { ok: true as const, orderId: "", accessionNo: "queued" };
     }
 
+    const billPopup = openBillPopupPlaceholder();
     try {
       const result = await createOrder(payload);
       if (!result.ok) {
+        billPopup?.close();
         setError(result.error);
         return result;
       }
       toast.success(`Order created. Accession ${result.accessionNo}.`);
       await rememberOrder(result.orderId, result.accessionNo);
+      showBillInPopup(billPopup, result.orderId);
       router.push(`/orders/${result.orderId}`);
       return result;
     } catch (error) {
+      billPopup?.close();
       if (isNetworkError(error)) {
         await enqueueOp({ type: "createOrder", params: payload });
         toast.success("Order queued. Tap Sync when you’re back online to assign an accession.");
@@ -374,8 +387,8 @@ type SearchCatalogItem =
     }
   }
 
-  const panelGroups = Array.from(new Set(visiblePanels.map((panel) => panel.category)));
-  const testGroups = Array.from(new Set(visibleTests.map((test) => test.category)));
+  const panelGroups = uniqueCategoriesInPrintOrder(visiblePanels);
+  const testGroups = uniqueCategoriesInPrintOrder(visibleTests);
 
   const allCategoryKeys = useMemo(
     () => (visiblePanels.length > 0 ? ["PACKAGES", ...testGroups] : testGroups),
@@ -903,6 +916,7 @@ type SearchCatalogItem =
                       <div className="flex flex-wrap gap-2">
                         {visiblePanels
                           .filter((panel) => panel.category === cat)
+                          .sort((a, b) => a.name.localeCompare(b.name))
                           .map((panel) => (
                             <button
                               type="button"

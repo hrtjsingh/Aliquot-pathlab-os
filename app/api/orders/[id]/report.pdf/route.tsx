@@ -21,6 +21,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       branch: true,
       authorizedBy: true,
       results: { include: { test: true } },
+      orderTests: { select: { testId: true, sortOrder: true } },
+      orderPanels: { include: { panel: { include: { panelTests: { orderBy: { sortOrder: "asc" } } } } } },
     },
   });
   if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });

@@ -1,17 +1,26 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet, Image, Svg, Path } from "@react-pdf/renderer";
-import { DEFAULT_REPORT_LAYOUT, type ReportLayout, type ReportTemplateId } from "@/lib/report-layout";
+import { DEFAULT_REPORT_LAYOUT, type ReportLayout, type ReportTemplateId, type ReportFormatKey } from "@/lib/report-layout";
 import { encodeCode39 } from "@/lib/barcode";
+import { formatNumericValue } from "@/lib/format-result";
+import { groupsInPrintOrder } from "@/lib/result-groups";
 
 type ReportResult = {
   testName: string;
   category: string;
+  groupKey?: string;
+  groupLabel?: string;
+  groupDescription?: string | null;
+  method?: string | null;
+  comment?: string | null;
+  memberOrder?: number;
   numericValue: number | null;
   textValue: string | null;
   unit: string | null;
   referenceRangeText: string | null;
   flag: string;
   isDerived: boolean;
+  decimalPrecision?: number | null;
   pathologistNote: string | null;
   grossDescription: string | null;
   microscopicDescription: string | null;
@@ -42,8 +51,7 @@ export type ReportData = {
 
 function formatResultValue(r: ReportResult): string {
   if (r.numericValue == null) return r.textValue ?? "—";
-  if (r.isDerived) return r.numericValue.toFixed(2);
-  return String(r.numericValue);
+  return formatNumericValue(r.numericValue, r.decimalPrecision ?? (r.isDerived ? 2 : 2));
 }
 
 function MicroscopeSvg({ color = "#c01515" }: { color?: string }) {
@@ -94,17 +102,32 @@ export function LabReportDocument({
   layout?: ReportLayout;
 }) {
   const templateId: ReportTemplateId = layout.templateId || "shiv_clinical";
+  const formatKey: ReportFormatKey = layout.formatKey || "custom";
+  const patho = formatKey.startsWith("patho_");
+  const pathoColour = formatKey === "patho_colour" || formatKey === "patho_colour_method";
   const primaryColor = layout.primaryColor || (templateId === "shiv_clinical" ? "#c01515" : templateId === "modern_teal" ? "#0f766e" : templateId === "classic_navy" ? "#1e3a8a" : templateId === "clean_minimal" ? "#334155" : "#047857");
+  const abnormalInk = pathoColour ? "#cc0000" : patho ? "#14181c" : primaryColor;
+  const fonts = patho
+    ? { regular: "Times-Roman", bold: "Times-Bold", italic: "Times-Italic" }
+    : { regular: "Helvetica", bold: "Helvetica-Bold", italic: "Helvetica-Oblique" };
 
   // Check By Name from Lab Config takes precedence over current user / authorizing pathologist
   const checkedByName = layout.signName ? layout.signName : (data.pathologistName ?? "Authorized Signatory");
   const checkedByTitle = layout.signTitle || "Checked By";
   const checkedByQual = layout.signQual || "B.A., D.M.L.T";
 
-  const grouped = data.results.reduce<Record<string, ReportResult[]>>((acc, r) => {
-    (acc[r.category] ??= []).push(r);
-    return acc;
-  }, {});
+  const printGroups = groupsInPrintOrder(
+    data.results.map((r) => ({
+      ...r,
+      groupKey: r.groupKey ?? `cat:${r.category}`,
+      groupLabel: r.groupLabel ?? r.category.replaceAll("_", " "),
+      groupDescription: r.groupDescription ?? null,
+      memberOrder: r.memberOrder,
+    }))
+  );
+  const pageGroups =
+    layout.startNewPageForGroup !== false ? printGroups.map((group) => [group]) : [printGroups];
+  const pages = pageGroups.length > 0 ? pageGroups : [[]];
 
   const narrativeCategories = new Set(["HISTOPATHOLOGY", "CYTOLOGY"]);
   const microCategory = "MICROBIOLOGY";
@@ -123,14 +146,77 @@ export function LabReportDocument({
     paddingBottom: templateId === "shiv_clinical" ? 72 : 54,
     paddingHorizontal: 28,
     fontSize: 8.5 as const,
-    fontFamily: "Helvetica",
+    fontFamily: fonts.regular,
     color: "#14181c",
   };
 
+  function renderGroupBanner(label: string) {
+    if (formatKey === "patho_standard") {
+      return (
+        <Text style={{ fontFamily: fonts.bold, fontSize: 11, marginTop: 8, marginBottom: 4 }}>{label}</Text>
+      );
+    }
+    if (formatKey === "patho_profiles") {
+      return (
+        <View style={{ backgroundColor: "#CED8E0", borderWidth: 0.25, borderColor: "#000000", paddingVertical: 5, marginTop: 8, marginBottom: 6, alignItems: "center" }}>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 12 }}>{label}</Text>
+        </View>
+      );
+    }
+    if (formatKey === "patho_colour" || formatKey === "patho_colour_method") {
+      return (
+        <View style={{ backgroundColor: primaryColor, paddingVertical: 5, marginTop: 8, marginBottom: 5, alignItems: "center" }}>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: "#ffffff", textTransform: "uppercase" }}>{label}</Text>
+        </View>
+      );
+    }
+    if (formatKey === "patho_preprint") {
+      return (
+        <Text style={{ fontFamily: fonts.bold, fontSize: 11, borderBottomWidth: 0.6, borderColor: "#14181c", paddingBottom: 2, marginTop: 10, marginBottom: 4 }}>
+          {label}
+        </Text>
+      );
+    }
+    if (templateId === "shiv_clinical") {
+      return (
+        <View style={{ backgroundColor: "#d5e2eb", borderWidth: 0.5, borderColor: "#b0c4de", paddingVertical: 3, marginTop: 4, marginBottom: 4, alignItems: "center" }}>
+          <Text style={{ fontSize: 9.5, fontFamily: fonts.bold, color: "#14181c", letterSpacing: 0.5, textTransform: "uppercase" }}>{label}</Text>
+        </View>
+      );
+    }
+    if (templateId === "classic_navy") {
+      return (
+        <View style={{ backgroundColor: primaryColor, paddingVertical: 3, paddingHorizontal: 8, marginTop: 4, marginBottom: 4 }}>
+          <Text style={{ fontSize: 9, fontFamily: fonts.bold, color: "#ffffff", letterSpacing: 0.5, textTransform: "uppercase" }}>{label}</Text>
+        </View>
+      );
+    }
+    if (templateId === "modern_teal") {
+      return (
+        <View style={{ backgroundColor: "#ccfbf1", borderLeftWidth: 3, borderColor: primaryColor, paddingVertical: 3, paddingHorizontal: 6, marginTop: 4, marginBottom: 4 }}>
+          <Text style={{ fontSize: 9, fontFamily: fonts.bold, color: primaryColor, textTransform: "uppercase" }}>{label}</Text>
+        </View>
+      );
+    }
+    if (templateId === "bold_emerald") {
+      return (
+        <View style={{ backgroundColor: "#ecfdf5", borderRightWidth: 3, borderColor: "#d97706", paddingVertical: 3, paddingHorizontal: 6, marginTop: 4, marginBottom: 4 }}>
+          <Text style={{ fontSize: 9, fontFamily: fonts.bold, color: primaryColor, textTransform: "uppercase" }}>{label}</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={{ backgroundColor: "#f1f5f9", paddingVertical: 3, paddingHorizontal: 6, marginTop: 4, marginBottom: 4 }}>
+        <Text style={{ fontSize: 8.5, fontFamily: fonts.bold, color: "#334155", textTransform: "uppercase" }}>{label}</Text>
+      </View>
+    );
+  }
+
   return (
     <Document>
-      <Page size="A4" style={basePageStyle}>
-        {data.isAmended && (
+      {pages.map((groups, pageIndex) => (
+      <Page key={`report-page-${pageIndex}`} size="A4" style={basePageStyle}>
+        {pageIndex === 0 && data.isAmended && (
           <Text style={{ backgroundColor: primaryColor, color: "white", padding: 3, textAlign: "center", fontSize: 8.5, fontWeight: 700, marginBottom: 6 }}>
             AMENDED REPORT — supersedes previously released report for this accession
           </Text>
@@ -139,6 +225,8 @@ export function LabReportDocument({
         {/* ========================================================================= */}
         {/* HEADER SECTION BY TEMPLATE                                                */}
         {/* ========================================================================= */}
+        {layout.showLetterhead !== false ? (
+        <View>
         {templateId === "shiv_clinical" && (
           <View style={{ alignItems: "center", marginBottom: 6 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%", marginBottom: 2 }}>
@@ -221,6 +309,8 @@ export function LabReportDocument({
             </View>
           </View>
         )}
+        </View>
+        ) : null}
 
         {/* ========================================================================= */}
         {/* PATIENT INFORMATION BLOCK BY TEMPLATE                                     */}
@@ -290,60 +380,59 @@ export function LabReportDocument({
         {/* ========================================================================= */}
         {/* DIAGNOSTIC CATEGORIES AND RESULTS TABLE                                  */}
         {/* ========================================================================= */}
-        {Object.entries(grouped).map(([category, results]) => (
-          <View key={category} wrap={false} style={{ marginBottom: 6 }}>
-            {/* Category Banner */}
-            {templateId === "shiv_clinical" ? (
-              <View style={{ backgroundColor: "#d5e2eb", borderWidth: 0.5, borderColor: "#b0c4de", paddingVertical: 3, marginTop: 4, marginBottom: 6, alignItems: "center" }}>
-                <Text style={{ fontSize: 9.5, fontWeight: 700, color: "#14181c", letterSpacing: 0.5, textTransform: "uppercase" }}>
-                  {category.replaceAll("_", " ")}
-                </Text>
-              </View>
-            ) : templateId === "classic_navy" ? (
-              <View style={{ backgroundColor: primaryColor, paddingVertical: 3, paddingHorizontal: 8, marginTop: 4, marginBottom: 4 }}>
-                <Text style={{ fontSize: 9, fontWeight: 700, color: "#ffffff", letterSpacing: 0.5, textTransform: "uppercase" }}>
-                  {category.replaceAll("_", " ")}
-                </Text>
-              </View>
-            ) : templateId === "modern_teal" ? (
-              <View style={{ backgroundColor: "#ccfbf1", borderLeftWidth: 3, borderColor: primaryColor, paddingVertical: 3, paddingHorizontal: 6, marginTop: 4, marginBottom: 4 }}>
-                <Text style={{ fontSize: 9, fontWeight: 700, color: primaryColor, textTransform: "uppercase" }}>
-                  {category.replaceAll("_", " ")}
-                </Text>
-              </View>
-            ) : templateId === "bold_emerald" ? (
-              <View style={{ backgroundColor: "#ecfdf5", borderRightWidth: 3, borderColor: "#d97706", paddingVertical: 3, paddingHorizontal: 6, marginTop: 4, marginBottom: 4 }}>
-                <Text style={{ fontSize: 9, fontWeight: 700, color: primaryColor, textTransform: "uppercase" }}>
-                  {category.replaceAll("_", " ")}
-                </Text>
-              </View>
-            ) : (
-              <View style={{ backgroundColor: "#f1f5f9", paddingVertical: 3, paddingHorizontal: 6, marginTop: 4, marginBottom: 4 }}>
-                <Text style={{ fontSize: 8.5, fontWeight: 700, color: "#334155", textTransform: "uppercase" }}>
-                  {category.replaceAll("_", " ")}
-                </Text>
-              </View>
-            )}
+        {groups.map((group) => {
+          const results = group.rows;
+          const category = results[0]?.category ?? group.label;
+          return (
+          <View key={group.key} wrap style={{ marginBottom: 6 }}>
+            {renderGroupBanner(group.label)}
+            {layout.showGroupDescription !== false && group.description ? (
+              <Text style={{ fontSize: 7.5, fontStyle: "italic", color: "#475569", marginBottom: 4, paddingHorizontal: 4 }}>
+                {group.description}
+              </Text>
+            ) : null}
 
             {/* Narrative / Micro / Numeric test rendering */}
             {narrativeCategories.has(category) ? (
               results.map((r, idx) => (
                 <View key={idx} style={{ marginBottom: 6, paddingHorizontal: 4 }}>
                   <Text style={{ fontWeight: 700, marginBottom: 2 }}>{r.testName}</Text>
+                  {layout.showMethod !== false && r.method ? <Text style={{ fontSize: 7.5, fontStyle: "italic", color: "#64748b", marginBottom: 2 }}>{r.method}</Text> : null}
                   {r.grossDescription && <Text style={{ marginBottom: 2 }}>Gross: {r.grossDescription}</Text>}
                   {r.microscopicDescription && <Text style={{ marginBottom: 2 }}>Microscopic: {r.microscopicDescription}</Text>}
                   {r.diagnosis && <Text style={{ fontWeight: 700 }}>Diagnosis: {r.diagnosis}</Text>}
+                  {r.comment ? <Text style={{ fontSize: 7.5, fontStyle: "italic", marginTop: 2 }}>{r.comment}</Text> : null}
                 </View>
               ))
             ) : category === microCategory ? (
-              results.map((r, idx) => (
+              results.map((r, idx) => {
+                const panel = r.organismPanel as { organism?: string; colonyCount?: string; antibiotics?: Array<{ drug: string; result: string }> } | null;
+                const antibiotics = (panel?.antibiotics ?? []).filter((row) => row.drug);
+                return (
                 <View key={idx} style={{ marginBottom: 6, paddingHorizontal: 4 }}>
                   <Text style={{ fontWeight: 700 }}>
-                    {r.testName}: {r.organismPanel?.organism ?? r.textValue ?? "Pending"}
+                    {r.testName}: {panel?.organism ?? r.textValue ?? "Pending"}
                   </Text>
-                  {r.organismPanel?.colonyCount && <Text>Colony count: {r.organismPanel.colonyCount}</Text>}
+                  {layout.showMethod !== false && r.method ? <Text style={{ fontSize: 7.5, fontStyle: "italic", color: "#64748b" }}>{r.method}</Text> : null}
+                  {(panel?.colonyCount || r.textValue) && <Text>Colony count: {panel?.colonyCount ?? "—"}</Text>}
+                  {antibiotics.length > 0 ? (
+                    <View style={{ marginTop: 3 }}>
+                      <View style={{ flexDirection: "row", borderBottomWidth: 0.5, borderColor: "#14181c", paddingBottom: 1, marginBottom: 1 }}>
+                        <Text style={{ width: "70%", fontSize: 8, fontWeight: 700 }}>Antibiotic</Text>
+                        <Text style={{ width: "30%", fontSize: 8, fontWeight: 700 }}>S / I / R</Text>
+                      </View>
+                      {antibiotics.map((row, drugIdx) => (
+                        <View key={`${row.drug}-${drugIdx}`} style={{ flexDirection: "row", paddingVertical: 1 }}>
+                          <Text style={{ width: "70%", fontSize: 8 }}>{row.drug}</Text>
+                          <Text style={{ width: "30%", fontSize: 8 }}>{row.result || "—"}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                  {r.comment ? <Text style={{ fontSize: 7.5, fontStyle: "italic", marginTop: 2 }}>{r.comment}</Text> : null}
                 </View>
-              ))
+                );
+              })
             ) : (
               <View>
                 <View style={{ flexDirection: "row", borderBottomWidth: 1, borderColor: templateId === "classic_navy" ? primaryColor : "#14181c", paddingBottom: 3, marginBottom: 3 }}>
@@ -355,21 +444,34 @@ export function LabReportDocument({
                 {results.map((r, idx) => {
                   const isAbnormal = r.flag !== "NORMAL";
                   return (
-                    <View key={idx} style={{ flexDirection: "row", paddingVertical: 2.5, borderBottomWidth: templateId === "classic_navy" ? 0.5 : 0, borderColor: "#e2e8f0" }}>
-                      <Text style={{ width: "42%", fontSize: 8.5, color: "#14181c" }}>{r.testName}</Text>
-                      <Text style={{ width: "22%", fontSize: 8.5, fontWeight: isAbnormal ? 700 : 400, textDecoration: isAbnormal ? "underline" : "none", color: isAbnormal ? (templateId === "shiv_clinical" ? "#000000" : primaryColor) : "#14181c" }}>
-                        {formatResultValue(r)}
-                      </Text>
-                      <Text style={{ width: "16%", fontSize: 8.5, color: "#475569" }}>{r.unit ?? ""}</Text>
-                      <Text style={{ width: "20%", fontSize: 8.5, color: "#475569" }}>{r.referenceRangeText ?? "—"}</Text>
+                    <View key={idx} wrap={false} style={{ paddingVertical: 2.5, borderBottomWidth: templateId === "classic_navy" ? 0.5 : 0, borderColor: "#e2e8f0" }}>
+                      <View style={{ flexDirection: "row" }}>
+                        <View style={{ width: "42%" }}>
+                          <Text style={{ fontSize: 8.5, color: "#14181c" }}>{r.testName}</Text>
+                          {layout.showMethod !== false && r.method ? <Text style={{ fontSize: 7, fontFamily: fonts.italic, color: "#64748b" }}>{r.method}</Text> : null}
+                        </View>
+                        <Text style={{ width: "22%", fontSize: 8.5, fontFamily: isAbnormal ? fonts.bold : fonts.regular, textDecoration: isAbnormal ? "underline" : "none", color: isAbnormal ? abnormalInk : "#14181c" }}>
+                          {formatResultValue(r)}
+                        </Text>
+                        <Text style={{ width: "16%", fontSize: 8.5, color: "#475569" }}>{r.unit ?? ""}</Text>
+                        <Text style={{ width: "20%", fontSize: 8.5, color: "#475569" }}>{r.referenceRangeText ?? "—"}</Text>
+                      </View>
+                      {r.comment ? (
+                        <Text style={{ fontSize: 7.5, fontStyle: "italic", color: "#475569", marginTop: 1, paddingRight: 8 }}>
+                          {r.comment}
+                        </Text>
+                      ) : null}
                     </View>
                   );
                 })}
               </View>
             )}
           </View>
-        ))}
+          );
+        })}
 
+        {pageIndex === pages.length - 1 ? (
+          <View>
         {/* End of Report Divider */}
         <Text style={{ textAlign: "center", fontSize: 8, fontWeight: 700, fontStyle: "italic", marginTop: 14, marginBottom: 8, color: "#14181c" }}>
           *********End Of Report*********
@@ -391,6 +493,12 @@ export function LabReportDocument({
             <Text style={{ fontSize: 8, color: "#5b6670" }}>{checkedByQual}</Text>
           </View>
         </View>
+          </View>
+        ) : (
+          <Text style={{ textAlign: "center", fontSize: 7.5, fontStyle: "italic", marginTop: 10, color: "#64748b" }}>
+            Continued on next page
+          </Text>
+        )}
 
         {/* ========================================================================= */}
         {/* FOOTER BANNER / LEGAL DISCLAIMER                                         */}
@@ -420,7 +528,13 @@ export function LabReportDocument({
             <Text style={{ fontSize: 7, textAlign: "center", color: primaryColor, fontWeight: 700, marginTop: 1 }}>NOT VALID FOR MEDICO LEGAL PURPOSE</Text>
           </View>
         ) : null}
+        <Text
+          fixed
+          style={{ position: "absolute", bottom: 4, right: 28, fontSize: 7, color: "#64748b" }}
+          render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+        />
       </Page>
+      ))}
     </Document>
   );
 }

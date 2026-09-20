@@ -20,7 +20,7 @@ export default async function TestMasterPage() {
 
   const tests = await prisma.test.findMany({
     where: { vendorId: user.vendorId },
-    orderBy: [{ category: "asc" }, { name: "asc" }],
+    orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
     include: {
       referenceRanges: { orderBy: [{ gender: "asc" }, { ageMinDays: "asc" }] },
       criticalThresholds: true,

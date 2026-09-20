@@ -11,6 +11,68 @@ export type FlagInput = {
  * because it drives a different workflow (call-back required), not just a
  * visual marker.
  */
+const NEGATIVE_WORDS = new Set([
+  "negative",
+  "non-reactive",
+  "nonreactive",
+  "non reactive",
+  "nil",
+  "not seen",
+  "not detected",
+  "absent",
+  "no growth",
+  "clear",
+]);
+const POSITIVE_WORDS = new Set(["positive", "reactive", "detected", "present", "growth"]);
+
+function normalizeQual(value: string): string {
+  return value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+}
+
+function qualitativePolarity(value: string | null | undefined): "neg" | "pos" | null {
+  if (!value) return null;
+  const n = normalizeQual(value);
+  if (NEGATIVE_WORDS.has(n) || NEGATIVE_WORDS.has(n.replace(/\s*\(.*\)\s*/g, "").trim())) return "neg";
+  if (POSITIVE_WORDS.has(n)) return "pos";
+  return null;
+}
+
+function titerAbnormal(value: string, range: string | null | undefined): boolean | null {
+  const titerMatch = value.match(/1\s*:\s*(\d+)/);
+  if (!titerMatch) return null;
+  const titer = Number(titerMatch[1]);
+  const lt = range?.match(/<\s*1\s*:\s*(\d+)/);
+  if (lt) return titer >= Number(lt[1]);
+  const gt = range?.match(/>\s*1\s*:\s*(\d+)/);
+  if (gt) return titer <= Number(gt[1]);
+  return null;
+}
+
+/** Qualitative/titer vs expected normal. */
+export function computeQualitativeFlag(
+  textValue: string | null | undefined,
+  expectedNormal: string | null | undefined
+): ResultFlag {
+  const value = (textValue ?? "").trim();
+  if (!value) return ResultFlag.NORMAL;
+
+  const titer = titerAbnormal(value, expectedNormal);
+  if (titer === true) return ResultFlag.ABNORMAL;
+  if (titer === false) return ResultFlag.NORMAL;
+
+  const polarity = qualitativePolarity(value);
+  const expected = qualitativePolarity(expectedNormal);
+  if (polarity && expected && polarity !== expected) return ResultFlag.ABNORMAL;
+  if (polarity && expected && polarity === expected) return ResultFlag.NORMAL;
+
+  if (expectedNormal) {
+    const n = normalizeQual(value);
+    const e = normalizeQual(expectedNormal);
+    if (n && e && n !== e) return ResultFlag.ABNORMAL;
+  }
+  return ResultFlag.NORMAL;
+}
+
 export function computeFlag({ numericValue, range, criticalThreshold }: FlagInput): ResultFlag {
   if (numericValue == null) return ResultFlag.NORMAL;
 
@@ -39,12 +101,18 @@ export function parseRangeBounds(rangeText: string | null | undefined): { low: n
   return { low: null, high: null };
 }
 
-export function previewFlag(numericValue: number | null, rangeText: string | null | undefined): ResultFlag {
-  if (numericValue == null || Number.isNaN(numericValue)) return ResultFlag.NORMAL;
-  const { low, high } = parseRangeBounds(rangeText);
-  if (low != null && numericValue < low) return ResultFlag.LOW;
-  if (high != null && numericValue > high) return ResultFlag.HIGH;
-  return ResultFlag.NORMAL;
+export function previewFlag(
+  numericValue: number | null,
+  rangeText: string | null | undefined,
+  textValue?: string | null
+): ResultFlag {
+  if (numericValue != null && !Number.isNaN(numericValue)) {
+    const { low, high } = parseRangeBounds(rangeText);
+    if (low != null && numericValue < low) return ResultFlag.LOW;
+    if (high != null && numericValue > high) return ResultFlag.HIGH;
+    return ResultFlag.NORMAL;
+  }
+  return computeQualitativeFlag(textValue, rangeText);
 }
 
 export function requiresCriticalCallback(flag: ResultFlag): boolean {

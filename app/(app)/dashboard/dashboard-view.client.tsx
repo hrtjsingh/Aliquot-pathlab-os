@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Ban, ClipboardList, FileText, FlaskConical, Pencil, Receipt, Search } from "lucide-react";
+import { Ban, ClipboardList, FileText, FlaskConical, Pencil, Search } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { PriorityBadge, StatusBadge } from "@/components/status-badge";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PaymentUpdateDialog } from "@/components/payment-update-dialog";
+import { BillButton } from "@/components/bill-button";
 import { CacheMiss, useDataSync } from "@/components/data-sync";
 import { useIsInstalledPwa } from "@/lib/client-pwa";
 import { STATUS_LABELS, isCustomerVisibleReport } from "@/lib/workflow";
@@ -348,12 +349,7 @@ export function DashboardView() {
                               </Link>
                             </Button>
                           ) : null}
-                          <Button asChild size="sm" variant="ghost">
-                            <a href={`/api/orders/${order.id}/receipt.pdf`} target="_blank" rel="noreferrer">
-                              <Receipt />
-                              Bill
-                            </a>
-                          </Button>
+                          <BillButton orderId={order.id} />
                           <Button asChild size="sm" variant="ghost">
                             <Link href={`/orders/${order.id}` as never}>
                               <Pencil />

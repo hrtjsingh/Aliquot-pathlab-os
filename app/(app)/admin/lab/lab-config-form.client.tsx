@@ -1,16 +1,35 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Download, Save } from "lucide-react";
+import { Copy, Download, Plus, Save, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
-import { saveLabConfig } from "@/app/actions/lab";
-import { DEFAULT_REPORT_LAYOUT, REPORT_TEMPLATES, type ReportLayout } from "@/lib/report-layout";
+import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  createReportTemplate,
+  deleteReportTemplate,
+  duplicateReportTemplate,
+  saveLabConfig,
+  setDefaultReportTemplate,
+  type SavedReportTemplate,
+} from "@/app/actions/lab";
+import { DEFAULT_REPORT_LAYOUT, ALIQUOT_REPORT_PRESETS, REPORT_TEMPLATES, type ReportLayout } from "@/lib/report-layout";
 import { cn } from "@/lib/utils";
 
 type BranchFields = {
@@ -21,6 +40,7 @@ type BranchFields = {
   nablNo: string;
   isoNo: string;
   letterheadUrl: string;
+  inrIsi: number;
 };
 
 const TOGGLES: Array<{ key: keyof ReportLayout; label: string; hint: string }> = [
@@ -38,25 +58,46 @@ const TOGGLES: Array<{ key: keyof ReportLayout; label: string; hint: string }> =
   { key: "showFooter", label: "Footer disclaimer", hint: "Print the legal note on every page." },
   { key: "showQrCode", label: "QR code", hint: "Print a scan-to-view QR with the accession ID." },
   { key: "showBarcode", label: "Accession barcode", hint: "Print a Code 39 barcode for the accession number." },
+  { key: "startNewPageForGroup", label: "New page per group", hint: "Print each booked package on its own page, with header repeated." },
+  { key: "showLetterhead", label: "Letterhead", hint: "Print lab name and header. Off = pre-printed stationery." },
+  { key: "showMethod", label: "Method under test", hint: "Italic method line under each parameter, like Colour Report with Method." },
+  { key: "showGroupDescription", label: "Group description", hint: "Print the package / profile description under the group banner." },
 ];
-
-function flagLabel(flag: string) {
-  return { NORMAL: "", LOW: "L", HIGH: "H", CRITICAL_LOW: "L*", CRITICAL_HIGH: "H*", ABNORMAL: "Abn" }[flag] ?? "";
-}
 
 export function LabConfigForm({
   branch: initialBranch,
   layout: initialLayout,
+  templates: initialTemplates,
 }: {
   branch: BranchFields;
   layout: ReportLayout;
+  templates: SavedReportTemplate[];
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [branch, setBranch] = useState(initialBranch);
+  const [templates, setTemplates] = useState(initialTemplates);
+  const [selectedId, setSelectedId] = useState(
+    initialTemplates.find((row) => row.isDefault)?.id ?? initialTemplates[0]?.id ?? ""
+  );
+  const [templateName, setTemplateName] = useState(
+    initialTemplates.find((row) => row.isDefault)?.name ?? initialTemplates[0]?.name ?? "Standard (Aliquot)"
+  );
   const [layout, setLayout] = useState<ReportLayout>(initialLayout);
+  const [newOpen, setNewOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPreset, setNewPreset] = useState(ALIQUOT_REPORT_PRESETS[0]?.key ?? "standard");
+
+  const selected = templates.find((row) => row.id === selectedId);
 
   function setLayoutField<K extends keyof ReportLayout>(key: K, value: ReportLayout[K]) {
     setLayout((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectTemplate(row: SavedReportTemplate) {
+    setSelectedId(row.id);
+    setTemplateName(row.name);
+    setLayout(row.layout);
   }
 
   function save() {
@@ -68,13 +109,25 @@ export function LabConfigForm({
         nablNo: branch.nablNo,
         isoNo: branch.isoNo,
         letterheadUrl: branch.letterheadUrl,
+        inrIsi: Number(branch.inrIsi) || 1,
         layout,
+        templateId: selectedId,
+        templateName,
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success("Lab PDF configuration saved. New reports will use this layout.");
+      setTemplates((current) =>
+        current.map((row) => ({
+          ...row,
+          isDefault: row.id === selectedId,
+          name: row.id === selectedId ? templateName.trim() || row.name : row.name,
+          layout: row.id === selectedId ? layout : row.layout,
+        }))
+      );
+      toast.success("Saved. Released reports now use this template.");
+      router.refresh();
     });
   }
 
@@ -94,12 +147,207 @@ export function LabConfigForm({
     }
   }
 
+  function createFromPreset() {
+    startTransition(async () => {
+      const result = await createReportTemplate({
+        branchId: branch.id,
+        name: newName.trim() || ALIQUOT_REPORT_PRESETS.find((row) => row.key === newPreset)?.name || "New template",
+        presetKey: newPreset,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setTemplates((current) => [...current, result.template].sort((a, b) => a.name.localeCompare(b.name)));
+      selectTemplate(result.template);
+      setNewName("");
+      setNewOpen(false);
+      toast.success(`${result.template.name} created.`);
+      router.refresh();
+    });
+  }
+
   const contact = [layout.phone, layout.email, layout.website].filter(Boolean).join("  ·  ");
   const headerCentered = layout.headerStyle === "centered";
+  const formatKey = layout.formatKey || "patho_standard";
+  const pathoPreview = formatKey.startsWith("patho_");
+  const colourAbnormal = formatKey === "patho_colour" || formatKey === "patho_colour_method";
+  const formatLabel =
+    ALIQUOT_REPORT_PRESETS.find((row) => row.layout.formatKey === formatKey)?.name ??
+    REPORT_TEMPLATES.find((row) => row.id === layout.templateId)?.name ??
+    "Custom";
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]">
       <div className="flex flex-col gap-6">
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Report templates</CardTitle>
+              <CardDescription>
+                Aliquot formats: Standard, Colour, Colour with Method, Different Profiles, Pre-printed letterhead.
+                Save configuration prints the selected template on released reports.
+              </CardDescription>
+            </div>
+            <Dialog open={newOpen} onOpenChange={setNewOpen}>
+              <DialogTrigger asChild>
+                <Button type="button" size="sm">
+                  <Plus />
+                  New template
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create report template</DialogTitle>
+                  <DialogDescription>Start from an Aliquot format, then edit colours and fields.</DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="newTemplateName">Name</Label>
+                    <Input
+                      id="newTemplateName"
+                      value={newName}
+                      placeholder="Evening OPD colour"
+                      onChange={(event) => setNewName(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="newPreset">Based on</Label>
+                    <NativeSelect id="newPreset" value={newPreset} onChange={(event) => setNewPreset(event.target.value)}>
+                      {ALIQUOT_REPORT_PRESETS.map((preset) => (
+                        <option key={preset.key} value={preset.key}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                    <p className="text-xs text-muted-foreground">
+                      {ALIQUOT_REPORT_PRESETS.find((row) => row.key === newPreset)?.description}
+                    </p>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="button" onClick={createFromPreset} disabled={pending}>
+                    Create
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {templates.map((row) => {
+                const isSelected = row.id === selectedId;
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => selectTemplate(row)}
+                    className={cn(
+                      "flex flex-col text-left rounded-lg border px-3 py-2.5 transition-all",
+                      isSelected
+                        ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-semibold">{row.name}</span>
+                      {row.isDefault ? <Badge variant="secondary">Default</Badge> : null}
+                    </span>
+                    <span className="mt-1 text-[11px] text-muted-foreground">
+                      {ALIQUOT_REPORT_PRESETS.find((preset) => preset.layout.formatKey === row.layout.formatKey)?.name ??
+                        REPORT_TEMPLATES.find((tmpl) => tmpl.id === row.layout.templateId)?.name ??
+                        row.layout.templateId}
+                      {row.layout.showLetterhead === false ? " · no header" : ""}
+                      {row.layout.showMethod ? " · method" : " · no method"}
+                      {row.layout.formatKey === "patho_colour" || row.layout.formatKey === "patho_colour_method"
+                        ? " · red H/L"
+                        : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="templateName">Selected template name</Label>
+                <Input id="templateName" value={templateName} onChange={(event) => setTemplateName(event.target.value)} />
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={pending || !selected || selected.isDefault}
+                  onClick={() => {
+                    if (!selected) return;
+                    startTransition(async () => {
+                      const result = await setDefaultReportTemplate(selected.id);
+                      if (!result.ok) {
+                        toast.error(result.error);
+                        return;
+                      }
+                      setTemplates((current) => current.map((row) => ({ ...row, isDefault: row.id === selected.id })));
+                      toast.success(`${selected.name} is now the default print template.`);
+                      router.refresh();
+                    });
+                  }}
+                >
+                  <Star />
+                  Set default
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={pending || !selected}
+                  onClick={() => {
+                    if (!selected) return;
+                    startTransition(async () => {
+                      const result = await duplicateReportTemplate(selected.id);
+                      if (!result.ok) {
+                        toast.error(result.error);
+                        return;
+                      }
+                      setTemplates((current) => [...current, result.template]);
+                      selectTemplate(result.template);
+                      toast.success(`Duplicated as ${result.template.name}.`);
+                      router.refresh();
+                    });
+                  }}
+                >
+                  <Copy />
+                  Duplicate
+                </Button>
+                {selected && !selected.isDefault ? (
+                  <ConfirmDialog
+                    title="Delete this template?"
+                    description={`${selected.name} will be removed. Released reports already printed are not changed.`}
+                    confirmLabel="Delete template"
+                    variant="destructive"
+                    successMessage="Template deleted."
+                    trigger={
+                      <Button type="button" size="sm" variant="outline" disabled={pending}>
+                        <Trash2 />
+                        Delete
+                      </Button>
+                    }
+                    onConfirm={async () => {
+                      const result = await deleteReportTemplate(selected.id);
+                      if (!result.ok) return result;
+                      const remaining = templates.filter((row) => row.id !== selected.id);
+                      setTemplates(remaining);
+                      const next = remaining.find((row) => row.isDefault) ?? remaining[0];
+                      if (next) selectTemplate(next);
+                      router.refresh();
+                      return result;
+                    }}
+                  />
+                ) : null}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>Laboratory letterhead</CardTitle>
@@ -123,6 +371,18 @@ export function LabConfigForm({
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="isoNo">ISO number</Label>
               <Input id="isoNo" value={branch.isoNo} onChange={(event) => setBranch({ ...branch, isoNo: event.target.value })} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="inrIsi">INR reagent ISI</Label>
+              <Input
+                id="inrIsi"
+                type="number"
+                step="0.01"
+                min="0.5"
+                value={branch.inrIsi}
+                onChange={(event) => setBranch({ ...branch, inrIsi: Number(event.target.value) || 1 })}
+              />
+              <p className="text-xs text-muted-foreground">Used as INR = (Patient PT / Control PT) ^ ISI. Typical lots are 0.9–1.4.</p>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="phone">Phone</Label>
@@ -160,8 +420,8 @@ export function LabConfigForm({
 
         <Card>
           <CardHeader>
-            <CardTitle>Standard Lab Report Templates</CardTitle>
-            <CardDescription>Select from 5 standard, pathology lab-tested PDF report layout designs.</CardDescription>
+            <CardTitle>Skin (visual style)</CardTitle>
+            <CardDescription>Colour and header chrome for the selected template.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -176,6 +436,7 @@ export function LabConfigForm({
                         ...curr,
                         templateId: tmpl.id,
                         primaryColor: tmpl.defaultColor,
+                        formatKey: "custom",
                       }));
                     }}
                     className={cn(
@@ -314,10 +575,16 @@ export function LabConfigForm({
         <Card>
           <CardHeader>
             <CardTitle>Live preview</CardTitle>
-            <CardDescription>Updates as you edit. Save to apply this layout to released reports.</CardDescription>
+            <CardDescription>
+              {formatLabel}. Click a template on the left, then download sample PDF — each Aliquot format prints differently.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-hidden rounded-md border border-border bg-white text-[#14181c] shadow-sm">
+            <div className={cn("overflow-hidden rounded-md border border-border bg-white text-[#14181c] shadow-sm", pathoPreview && "font-serif")}>
+              <p className="bg-[#0f172a] px-3 py-1 text-center text-[10px] font-sans font-semibold tracking-wide text-white">
+                {formatLabel}
+              </p>
+              {layout.showLetterhead !== false ? (
               <div
                 className={cn(
                   "border-b-2 px-4 py-3",
@@ -377,6 +644,9 @@ export function LabConfigForm({
                   </div>
                 ) : null}
               </div>
+              ) : (
+                <p className="px-4 py-2 text-center text-[10px] italic text-[#64748b]">Letterhead omitted — pre-printed stationery</p>
+              )}
 
               <div className="flex justify-between gap-2 border-b border-[#dfe3e4] px-4 py-2 text-[11px]">
                 <div>
@@ -414,37 +684,92 @@ export function LabConfigForm({
               </div>
 
               <div className="px-4 py-3">
-                <p className="mb-2 bg-[#eef0f1] px-2 py-1 text-[11px] font-semibold" style={{ color: layout.primaryColor }}>
-                  CLINICAL CHEMISTRY
-                </p>
+                {formatKey === "patho_standard" ? (
+                  <p className="mb-1 text-[12px] font-bold">CBC</p>
+                ) : formatKey === "patho_profiles" ? (
+                  <p className="mb-2 border border-black/40 bg-[#CED8E0] py-1 text-center text-[12px] font-bold">CBC</p>
+                ) : formatKey === "patho_colour" || formatKey === "patho_colour_method" ? (
+                  <p className="mb-2 py-1 text-center text-[11px] font-bold uppercase text-white" style={{ backgroundColor: layout.primaryColor }}>
+                    CBC
+                  </p>
+                ) : formatKey === "patho_preprint" ? (
+                  <p className="mb-2 border-b border-black pb-1 text-[12px] font-bold">CBC</p>
+                ) : (
+                  <p className="mb-1 bg-[#eef0f1] px-2 py-1 text-[11px] font-semibold uppercase" style={{ color: layout.primaryColor }}>
+                    CBC
+                  </p>
+                )}
+                {layout.showGroupDescription !== false ? (
+                  <p className="mb-2 px-0 text-[9px] italic text-[#5b6670]">Complete Blood Count. Specimen: EDTA whole blood.</p>
+                ) : null}
                 <table className="w-full text-left text-[10px]">
                   <thead>
                     <tr className="border-b border-[#14181c]">
-                      <th className="py-1 font-medium">Parameter</th>
-                      <th className="py-1 font-medium">Result</th>
+                      <th className="py-1 font-medium">{formatKey === "patho_profiles" ? "Test Name" : "Parameter"}</th>
+                      <th className="py-1 font-medium">{formatKey === "patho_profiles" ? "Patient Value" : "Result"}</th>
                       <th className="py-1 font-medium">Unit</th>
-                      {layout.showReferenceRange ? <th className="py-1 font-medium">Range</th> : null}
-                      {layout.showFlags ? <th className="py-1 font-medium">Flag</th> : null}
+                      {layout.showReferenceRange ? (
+                        <th className="py-1 font-medium">{formatKey === "patho_profiles" ? "Reference Range" : "Range"}</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
-                    {[
-                      { name: "Hemoglobin", value: "13.4", unit: "g/dL", range: "12.0 – 15.0", flag: "NORMAL" },
-                      { name: "Glucose (Fasting)", value: "126", unit: "mg/dL", range: "70 – 100", flag: "HIGH" },
-                    ].map((row) => (
-                      <tr key={row.name} className="border-b border-[#eef0f1]">
-                        <td className="py-1">{row.name}</td>
-                        <td className={cn("py-1 font-semibold", row.flag === "HIGH" && "text-[#a15c00]")}>{row.value}</td>
-                        <td className="py-1 text-[#5b6670]">{row.unit}</td>
-                        {layout.showReferenceRange ? <td className="py-1 text-[#5b6670]">{row.range}</td> : null}
-                        {layout.showFlags ? (
-                          <td className={cn("py-1 font-semibold", row.flag === "HIGH" && "text-[#a15c00]")}>{flagLabel(row.flag)}</td>
+                    <tr className="border-b border-[#eef0f1]">
+                      <td className="py-1">
+                        Hemoglobin
+                        {layout.showMethod !== false ? (
+                          <span className="block text-[8px] italic text-[#5b6670]">Automated CBC, colorimetric</span>
                         ) : null}
-                      </tr>
-                    ))}
+                      </td>
+                      <td className="py-1 font-semibold">13.4</td>
+                      <td className="py-1 text-[#5b6670]">g/dL</td>
+                      {layout.showReferenceRange ? <td className="py-1 text-[#5b6670]">12.0 – 15.0</td> : null}
+                    </tr>
                   </tbody>
                 </table>
-                <p className="mt-2 text-[10px] italic" style={{ color: layout.primaryColor }}>
+                {layout.startNewPageForGroup ? (
+                  <p className="my-2 border-t border-dashed border-[#cbd5e1] pt-2 text-center text-[8px] italic text-[#64748b]">
+                    Page break · next profile
+                  </p>
+                ) : null}
+                {formatKey === "patho_standard" ? (
+                  <p className="mb-1 mt-2 text-[12px] font-bold">Glucose (Fasting)</p>
+                ) : formatKey === "patho_profiles" ? (
+                  <p className="mb-2 mt-2 border border-black/40 bg-[#CED8E0] py-1 text-center text-[12px] font-bold">Glucose (Fasting)</p>
+                ) : formatKey === "patho_colour" || formatKey === "patho_colour_method" ? (
+                  <p className="mb-2 mt-2 py-1 text-center text-[11px] font-bold uppercase text-white" style={{ backgroundColor: layout.primaryColor }}>
+                    Glucose (Fasting)
+                  </p>
+                ) : formatKey === "patho_preprint" ? (
+                  <p className="mb-2 mt-2 border-b border-black pb-1 text-[12px] font-bold">Glucose (Fasting)</p>
+                ) : (
+                  <p className="mb-1 mt-2 bg-[#eef0f1] px-2 py-1 text-[11px] font-semibold uppercase" style={{ color: layout.primaryColor }}>
+                    Glucose (Fasting)
+                  </p>
+                )}
+                {layout.showGroupDescription !== false ? (
+                  <p className="mb-2 text-[9px] italic text-[#5b6670]">Fasting blood glucose. Specimen: Serum / fluoride plasma.</p>
+                ) : null}
+                <table className="w-full text-left text-[10px]">
+                  <tbody>
+                    <tr className="border-b border-[#eef0f1]">
+                      <td className="py-1">
+                        Glucose (Fasting)
+                        {layout.showMethod !== false ? (
+                          <span className="block text-[8px] italic text-[#5b6670]">Hexokinase</span>
+                        ) : null}
+                      </td>
+                      <td
+                        className={cn("py-1 font-semibold underline", colourAbnormal ? "text-[#cc0000]" : "text-[#14181c]")}
+                      >
+                        126
+                      </td>
+                      <td className="py-1 text-[#5b6670]">mg/dL</td>
+                      {layout.showReferenceRange ? <td className="py-1 text-[#5b6670]">70 – 100</td> : null}
+                    </tr>
+                  </tbody>
+                </table>
+                <p className="mt-2 text-[10px] italic" style={{ color: colourAbnormal ? "#cc0000" : layout.primaryColor }}>
                   Correlate with clinical findings.
                 </p>
                 {layout.showSignature || layout.signName ? (

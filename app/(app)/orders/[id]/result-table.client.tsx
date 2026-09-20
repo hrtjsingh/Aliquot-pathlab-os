@@ -16,17 +16,35 @@ import { BookOpen, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react"
 import { previewFlag } from "@/lib/flagging";
 import { HandoverActions } from "./handover-actions.client";
 import { isCustomerVisibleReport } from "@/lib/workflow";
+import { formatNumericValue } from "@/lib/format-result";
+import { groupsInPrintOrder } from "@/lib/result-groups";
+
+type OrganismPanelValue = {
+  organism?: string;
+  colonyCount?: string;
+  antibiotics?: Array<{ drug: string; result: string }>;
+};
 
 type ResultRow = {
   testId: string;
   code: string;
   name: string;
   category: string;
+  groupKey?: string;
+  groupLabel?: string;
+  groupDescription?: string | null;
+  method?: string | null;
+  comment?: string | null;
   unit: string | null;
   dataType: string;
   isDerived: boolean;
+  decimalPrecision?: number | null;
   numericValue: number | null;
   textValue: string | null;
+  organismPanel?: OrganismPanelValue | null;
+  grossDescription?: string | null;
+  microscopicDescription?: string | null;
+  diagnosis?: string | null;
   referenceRangeText: string | null;
   flag: string;
   deltaFlag: boolean;
@@ -42,6 +60,88 @@ const FLAG_BADGE: Record<string, { variant: "destructive" | "warning" | "outline
   CRITICAL_HIGH: { variant: "destructive", label: "CRITICAL H" },
   ABNORMAL: { variant: "warning", label: "Abnormal" },
 };
+
+const DEFAULT_DRUGS = ["Ampicillin", "Ciprofloxacin", "Gentamicin", "Ceftriaxone"];
+
+function CultureFields({
+  row,
+  editable,
+  pending,
+  onSave,
+}: {
+  row: ResultRow;
+  editable: boolean;
+  pending: boolean;
+  onSave: (panel: OrganismPanelValue) => Promise<void>;
+}) {
+  const initial = row.organismPanel ?? {};
+  const [organism, setOrganism] = useState(initial.organism ?? row.textValue ?? "");
+  const [colonyCount, setColonyCount] = useState(initial.colonyCount ?? "");
+  const [antibiotics, setAntibiotics] = useState<Array<{ drug: string; result: string }>>(
+    initial.antibiotics && initial.antibiotics.length
+      ? initial.antibiotics
+      : DEFAULT_DRUGS.map((drug) => ({ drug, result: "" }))
+  );
+
+  function persist(next: OrganismPanelValue) {
+    if (!editable || pending) return;
+    void onSave(next);
+  }
+
+  return (
+    <div className="flex flex-col gap-2 text-xs">
+      <div className="flex flex-wrap gap-2">
+        <Input
+          className="h-8 w-48"
+          placeholder="Organism isolated"
+          value={organism}
+          disabled={!editable || pending}
+          onChange={(e) => setOrganism(e.target.value)}
+          onBlur={() => persist({ organism, colonyCount, antibiotics })}
+        />
+        <Input
+          className="h-8 w-36"
+          placeholder="Colony count"
+          value={colonyCount}
+          disabled={!editable || pending}
+          onChange={(e) => setColonyCount(e.target.value)}
+          onBlur={() => persist({ organism, colonyCount, antibiotics })}
+        />
+      </div>
+      <div className="grid gap-1 sm:grid-cols-2">
+        {antibiotics.map((rowDrug, index) => (
+          <div key={`${rowDrug.drug}-${index}`} className="flex items-center gap-2">
+            <Input
+              className="h-8 flex-1"
+              value={rowDrug.drug}
+              disabled={!editable || pending}
+              onChange={(e) => {
+                const next = antibiotics.map((item, i) => (i === index ? { ...item, drug: e.target.value } : item));
+                setAntibiotics(next);
+              }}
+              onBlur={() => persist({ organism, colonyCount, antibiotics })}
+            />
+            <select
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+              value={rowDrug.result}
+              disabled={!editable || pending}
+              onChange={(e) => {
+                const next = antibiotics.map((item, i) => (i === index ? { ...item, result: e.target.value } : item));
+                setAntibiotics(next);
+                persist({ organism, colonyCount, antibiotics: next });
+              }}
+            >
+              <option value="">—</option>
+              <option value="S">S</option>
+              <option value="I">I</option>
+              <option value="R">R</option>
+            </select>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function ResultTable({
   orderId,
@@ -96,13 +196,13 @@ export function ResultTable({
   };
 
   const groups = useMemo(() => {
-    const map = new Map<string, ResultRow[]>();
-    for (const row of rows) {
-      const list = map.get(row.category) ?? [];
-      list.push(row);
-      map.set(row.category, list);
-    }
-    return Array.from(map.entries());
+    const assigned = rows.map((row) => ({
+      ...row,
+      groupKey: row.groupKey ?? `cat:${row.category}`,
+      groupLabel: row.groupLabel ?? row.category.replaceAll("_", " "),
+      groupDescription: row.groupDescription ?? null,
+    }));
+    return groupsInPrintOrder(assigned);
   }, [rows]);
 
   const [isReleasing, startReleaseTransition] = useTransition();
@@ -174,6 +274,10 @@ export function ResultTable({
         numericValue: isNumeric ? (raw.trim() === "" ? null : Number(raw)) : null,
         textValue: !isNumeric ? raw : null,
         referenceRangeText: row.referenceRangeText,
+        organismPanel: row.dataType === "ORGANISM_PANEL" ? row.organismPanel : undefined,
+        grossDescription: row.grossDescription ?? undefined,
+        microscopicDescription: row.microscopicDescription ?? undefined,
+        diagnosis: row.diagnosis ?? undefined,
       };
       try {
         if (isBrowserOffline()) {
@@ -213,36 +317,41 @@ export function ResultTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {groups.map(([category, group]) => {
-          const isCollapsed = collapsedCategories.has(category);
+        {groups.map((group) => {
+          const isCollapsed = collapsedCategories.has(group.key);
           return (
-            <Fragment key={category}>
+            <Fragment key={group.key}>
               <TableRow
                 className="bg-secondary/60 hover:bg-secondary/90 cursor-pointer select-none transition-colors border-b border-border/50"
-                onClick={() => toggleCategory(category)}
+                onClick={() => toggleCategory(group.key)}
                 role="button"
                 tabIndex={-1}
                 aria-expanded={!isCollapsed}
-                aria-label={`Toggle ${category.replaceAll("_", " ")} category`}
+                aria-label={`Toggle ${group.label} group`}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    toggleCategory(category);
+                    toggleCategory(group.key);
                   }
                 }}
               >
                 <TableCell colSpan={5} className="py-2.5 px-4 font-medium text-xs text-foreground">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground transition-transform duration-200">
-                        {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
-                      </span>
-                      <span className="font-semibold tracking-wide text-xs uppercase text-foreground">
-                        {category.replaceAll("_", " ")}
-                      </span>
-                      <Badge variant="outline" className="text-[10px] font-normal px-1.5 py-0 text-muted-foreground">
-                        {group.length} {group.length === 1 ? "test" : "tests"}
-                      </Badge>
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground transition-transform duration-200">
+                          {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                        </span>
+                        <span className="font-semibold tracking-wide text-xs uppercase text-foreground">
+                          {group.label}
+                        </span>
+                        <Badge variant="outline" className="text-[10px] font-normal px-1.5 py-0 text-muted-foreground">
+                          {group.rows.length} {group.rows.length === 1 ? "test" : "tests"}
+                        </Badge>
+                      </div>
+                      {group.description ? (
+                        <p className="pl-6 text-[11px] font-normal italic text-muted-foreground">{group.description}</p>
+                      ) : null}
                     </div>
                     {isCollapsed && (
                       <span className="text-[11px] text-muted-foreground font-normal italic pr-2">
@@ -253,20 +362,31 @@ export function ResultTable({
                 </TableCell>
               </TableRow>
               {!isCollapsed &&
-                group.map((row) => {
+                group.rows.map((row) => {
                   const raw = values[row.testId] ?? "";
                   const rangeText = row.referenceRangeText ?? "";
                   const numeric = row.dataType === "NUMERIC" && raw.trim() !== "" ? Number(raw) : row.numericValue;
-                  const liveFlag = editable && row.dataType === "NUMERIC" ? previewFlag(numeric, rangeText) : row.flag;
+                  const liveFlag =
+                    editable && row.dataType === "NUMERIC"
+                      ? previewFlag(numeric, rangeText)
+                      : editable
+                        ? previewFlag(null, rangeText, raw)
+                        : row.flag;
                   const flag = FLAG_BADGE[liveFlag] ?? FLAG_BADGE.NORMAL;
                   return (
-                    <TableRow key={row.testId} className="hover:bg-muted/30 transition-colors">
+                    <Fragment key={row.testId}>
+                    <TableRow className="hover:bg-muted/30 transition-colors">
                       <TableCell className="text-sm">
-                        <div className="flex items-center gap-1">
-                          <span>
-                            {row.name}
-                            {row.isDerived ? <span className="ml-1.5 text-xs text-muted-foreground">(calc.)</span> : null}
-                          </span>
+                        <div className="flex items-start gap-1">
+                          <div className="min-w-0">
+                            <span>
+                              {row.name}
+                              {row.isDerived ? <span className="ml-1.5 text-xs text-muted-foreground">(calc.)</span> : null}
+                            </span>
+                            {row.method ? (
+                              <p className="text-[11px] italic text-muted-foreground">{row.method}</p>
+                            ) : null}
+                          </div>
                           <TestProfileDialog
                             test={row.profile}
                             trigger={
@@ -280,7 +400,11 @@ export function ResultTable({
                       <TableCell className="w-40">
                         {row.isDerived ? (
                           <span className="tabular text-sm font-medium">
-                            {row.numericValue != null ? row.numericValue.toFixed(2) : "—"}
+                            {formatNumericValue(row.numericValue, row.decimalPrecision)}
+                          </span>
+                        ) : row.dataType === "ORGANISM_PANEL" ? (
+                          <span className="text-xs text-muted-foreground">
+                            {(row.organismPanel as { organism?: string } | null)?.organism ?? row.textValue ?? (editable ? "Enter below" : "—")}
                           </span>
                         ) : editable ? (
                           <Input
@@ -294,7 +418,9 @@ export function ResultTable({
                             onBlur={(e) => commit(row, e.target.value)}
                           />
                         ) : (
-                          <span className="tabular text-sm">{row.numericValue ?? row.textValue ?? "—"}</span>
+                          <span className="tabular text-sm">
+                            {row.numericValue != null ? formatNumericValue(row.numericValue, row.decimalPrecision) : (row.textValue ?? "—")}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">{row.unit}</TableCell>
@@ -308,6 +434,88 @@ export function ResultTable({
                         </div>
                       </TableCell>
                     </TableRow>
+                    {row.dataType === "ORGANISM_PANEL" ? (
+                      <TableRow className="bg-muted/20">
+                        <TableCell colSpan={5} className="py-2">
+                          <CultureFields
+                            row={row}
+                            editable={editable}
+                            pending={pendingId === row.testId}
+                            onSave={async (organismPanel) => {
+                              setPendingId(row.testId);
+                              try {
+                                await saveManualResult({
+                                  orderId,
+                                  testId: row.testId,
+                                  textValue: organismPanel.organism ?? row.textValue,
+                                  organismPanel,
+                                  referenceRangeText: row.referenceRangeText,
+                                });
+                              } finally {
+                                setPendingId(null);
+                              }
+                            }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {(row.category === "HISTOPATHOLOGY" || row.category === "CYTOLOGY") && editable ? (
+                      <TableRow className="bg-muted/20">
+                        <TableCell colSpan={5} className="py-2">
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            {(["grossDescription", "microscopicDescription", "diagnosis"] as const).map((field) => (
+                              <Input
+                                key={field}
+                                defaultValue={row[field] ?? ""}
+                                placeholder={field.replace("Description", "").replace(/([A-Z])/g, " $1").trim()}
+                                className="h-8 text-xs"
+                                onBlur={(e) => {
+                                  const value = e.target.value;
+                                  void saveManualResult({
+                                    orderId,
+                                    testId: row.testId,
+                                    textValue: row.textValue,
+                                    [field]: value,
+                                    referenceRangeText: row.referenceRangeText,
+                                  });
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    {editable ? (
+                      <TableRow className="bg-muted/10">
+                        <TableCell colSpan={5} className="py-1.5">
+                          <Input
+                            className="h-8 text-xs"
+                            defaultValue={row.comment ?? ""}
+                            placeholder="Comments / description (prints under this test)"
+                            disabled={pendingId === row.testId}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === (row.comment ?? "")) return;
+                              void saveManualResult({
+                                orderId,
+                                testId: row.testId,
+                                numericValue: row.numericValue,
+                                textValue: row.textValue,
+                                interpretiveComment: value,
+                                referenceRangeText: row.referenceRangeText,
+                              });
+                            }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ) : row.comment ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-1 text-xs italic text-muted-foreground">
+                          {row.comment}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    </Fragment>
                   );
                 })}
             </Fragment>

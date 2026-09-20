@@ -124,6 +124,10 @@ const CODE_BY_NAME: Record<string, string> = {
   "Indirect Bilirubin": "IBIL",
   "VLDL Cholesterol": "VLDL",
   "LDL Chol/HDL Chol Ratio": "LDL_HDL_RATIO",
+  "Prothrombin Time (PT)": "PT",
+  "Patient's Prothrombin Time": "PATIENT_PT",
+  "Control's Prothrombin Time": "MEAN_NORMAL_PT",
+  INR: "INR",
 };
 
 /** Duplicate rows that should not create a second test. */
@@ -153,6 +157,9 @@ const RULE_BY_NAME: Record<string, string> = {
   "Absolute Eosinophils Count (AEC)": "AEC",
   "Absolute Basophils Count": "ABC",
   "Anion Gap": "ANION_GAP",
+  Monocytes: "MONO_FROM_DIFF",
+  Basophils: "BASO_FROM_DIFF",
+  INR: "INR",
 };
 
 const QUALITATIVE_WORDS = new Set(
@@ -274,11 +281,8 @@ const PANEL_DEFS: PanelDef[] = [
     members: [
       "Haemoglobin (Hb)",
       "RBC Count",
-      "HCT (PCV) / Haematocrit",
-      "MCV",
-      "MCH",
-      "MCHC",
       "Total WBC Count (TLC)",
+      "Platelet Count",
       "Neutrophils",
       "Lymphocytes",
       "Monocytes",
@@ -289,7 +293,10 @@ const PANEL_DEFS: PanelDef[] = [
       "Absolute Monocytes Count",
       "Absolute Eosinophils Count (AEC)",
       "Absolute Basophils Count",
-      "Platelet Count",
+      "MCV",
+      "MCH",
+      "MCHC",
+      "HCT (PCV) / Haematocrit",
       "RDW-CV",
       "MPV",
     ],
@@ -299,7 +306,7 @@ const PANEL_DEFS: PanelDef[] = [
     name: "Coagulation Profile",
     category: "COAGULATION",
     price: 200,
-    members: ["Bleeding Time (BT)", "Clotting Time (CT)", "Prothrombin Time (PT)", "INR", "APTT (PTTK)"],
+    members: ["Bleeding Time (BT)", "Clotting Time (CT)", "Prothrombin Time (PT)", "Control's Prothrombin Time", "Patient's Prothrombin Time", "INR", "APTT (PTTK)"],
   },
   {
     code: "BT_CT",
@@ -679,6 +686,8 @@ export async function seedMasterCatalog(prisma: PrismaClient, vendorId: string) 
   const rows = parseRows().filter((row) => !SKIP_NAMES.has(row.name));
   const usedCodes = new Set<string>();
   const nameToCode = new Map<string, string>();
+  const panelNames = new Set(PANEL_DEFS.map((panel) => panel.name.trim().toLowerCase()));
+  const panelMemberNames = new Set(PANEL_DEFS.flatMap((panel) => panel.members.map((name) => name.trim().toLowerCase())));
 
   for (const row of rows) {
     let code = CODE_BY_NAME[row.name] ?? toCode(row.name);
@@ -690,7 +699,7 @@ export async function seedMasterCatalog(prisma: PrismaClient, vendorId: string) 
     nameToCode.set(row.name, code);
   }
 
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     const code = nameToCode.get(row.name)!;
     const category = CATEGORY_MAP[row.sourceCategory];
     const parsed = parseRange(row.range);
@@ -701,6 +710,11 @@ export async function seedMasterCatalog(prisma: PrismaClient, vendorId: string) 
     const isDerived = Boolean(derivationRule);
     const unit = row.unit || null;
     const price = row.charge;
+    const hideOnBooking =
+      isDerived ||
+      panelNames.has(row.name.trim().toLowerCase()) ||
+      (row.charge === 0 && panelMemberNames.has(row.name.trim().toLowerCase())) ||
+      /:-\s*$/.test(row.name);
 
     await prisma.test.upsert({
       where: { vendorId_code: { vendorId, code } },
@@ -714,6 +728,8 @@ export async function seedMasterCatalog(prisma: PrismaClient, vendorId: string) 
         dataType,
         isDerived,
         derivationRule,
+        sortOrder: index,
+        hideOnBooking,
         turnaroundHours: turnaroundHours(category),
         autoVerifyEligible: dataType === "NUMERIC" && !isDerived,
         active: true,
@@ -730,6 +746,8 @@ export async function seedMasterCatalog(prisma: PrismaClient, vendorId: string) 
         dataType,
         isDerived,
         derivationRule,
+        sortOrder: index,
+        hideOnBooking,
         turnaroundHours: turnaroundHours(category),
         autoVerifyEligible: dataType === "NUMERIC" && !isDerived,
       },
@@ -749,7 +767,7 @@ export async function seedMasterCatalog(prisma: PrismaClient, vendorId: string) 
         textRange: range.textRange,
         unit,
         isDefault: true,
-        ageMinDays: 6570,
+        ageMinDays: 0,
         ageMaxDays: 43800,
       };
       if (existing) {

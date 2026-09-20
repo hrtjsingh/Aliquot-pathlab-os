@@ -42,14 +42,14 @@ const RULES: Rule[] = [
   },
   {
     id: "elevated-de-ritis",
-    appliesTo: ["DE_RITIS_RATIO"],
-    test: (r) => r.DE_RITIS_RATIO != null && r.DE_RITIS_RATIO > 2,
+    appliesTo: ["DE_RITIS"],
+    test: (r) => r.DE_RITIS != null && r.DE_RITIS > 2,
     comment: "AST/ALT ratio > 2 may suggest alcoholic liver injury; clinical correlation advised.",
   },
   {
     id: "reduced-egfr",
-    appliesTo: ["EGFR_CKD_EPI_2021"],
-    test: (r) => r.EGFR_CKD_EPI_2021 != null && r.EGFR_CKD_EPI_2021 < 60,
+    appliesTo: ["EGFR"],
+    test: (r) => r.EGFR != null && r.EGFR < 60,
     comment: "eGFR < 60 mL/min/1.73m² — consistent with reduced renal function; repeat testing in 3 months recommended if not previously documented (KDIGO criteria).",
   },
 ];

@@ -225,13 +225,16 @@ export const CALC_RULES: Record<string, CalcRule> = {
   INR: {
     key: "INR",
     label: "INR",
-    inputs: ["PATIENT_PT", "MEAN_NORMAL_PT"],
+    inputs: ["PT", "PATIENT_PT", "MEAN_NORMAL_PT"],
     outputUnit: "",
     compute: (i, _ctx, config) => {
-      if (!allPresent(i, ["PATIENT_PT", "MEAN_NORMAL_PT"])) return { value: null, suppressed: true };
-      const isi = config?.isi;
-      if (!isi) return { value: null, suppressed: true, suppressReason: "ISI not configured for current reagent lot" };
-      return { value: Math.pow(i.PATIENT_PT! / i.MEAN_NORMAL_PT!, isi) };
+      const pt = i.PATIENT_PT ?? i.PT;
+      const mean = i.MEAN_NORMAL_PT;
+      if (pt == null || mean == null || Number.isNaN(pt) || Number.isNaN(mean) || mean === 0) {
+        return { value: null, suppressed: true };
+      }
+      const isi = config?.isi ?? 1;
+      return { value: Math.pow(pt / mean, isi) };
     },
   },
 
@@ -365,6 +368,27 @@ export const CALC_RULES: Record<string, CalcRule> = {
     compute: (i) => {
       if (!allPresent(i, ["NEUT_PCT", "LYMPH_PCT"]) || i.LYMPH_PCT === 0) return { value: null, suppressed: true };
       return { value: i.NEUT_PCT! / i.LYMPH_PCT! };
+    },
+  },
+  // Remainder diffs: Monocytes = 100-(N+L+E); Basophils = 100-(N+L+E+M)
+  MONO_FROM_DIFF: {
+    key: "MONO_FROM_DIFF",
+    label: "Monocytes from remainder",
+    inputs: ["NEUT_PCT", "LYMPH_PCT", "EOS_PCT"],
+    outputUnit: "%",
+    compute: (i) => {
+      if (!allPresent(i, ["NEUT_PCT", "LYMPH_PCT", "EOS_PCT"])) return { value: null, suppressed: true };
+      return { value: 100 - (i.NEUT_PCT! + i.LYMPH_PCT! + i.EOS_PCT!) };
+    },
+  },
+  BASO_FROM_DIFF: {
+    key: "BASO_FROM_DIFF",
+    label: "Basophils from remainder",
+    inputs: ["NEUT_PCT", "LYMPH_PCT", "EOS_PCT", "MONO_PCT"],
+    outputUnit: "%",
+    compute: (i) => {
+      if (!allPresent(i, ["NEUT_PCT", "LYMPH_PCT", "EOS_PCT", "MONO_PCT"])) return { value: null, suppressed: true };
+      return { value: 100 - (i.NEUT_PCT! + i.LYMPH_PCT! + i.EOS_PCT! + i.MONO_PCT!) };
     },
   },
 };

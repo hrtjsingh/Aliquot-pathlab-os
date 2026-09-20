@@ -29,6 +29,26 @@ export function expandDerivedInputs(selectedIds: Iterable<string>, tests: Catalo
   return [...result];
 }
 
+/** Booking a header test (e.g. Widal Tube Test) expands the matching package members. */
+export function expandPanelBundles(
+  selectedTestIds: string[],
+  tests: CatalogTest[],
+  panels: Array<{ name: string; code: string; testIds: string[] }>
+): string[] {
+  const byId = new Map(tests.map((test) => [test.id, test]));
+  const result = new Set(selectedTestIds);
+  for (const id of selectedTestIds) {
+    const test = byId.get(id);
+    if (!test) continue;
+    const bundle = panels.find(
+      (panel) => panel.name.trim().toLowerCase() === test.name.trim().toLowerCase() || panel.code === test.code
+    );
+    if (!bundle) continue;
+    for (const memberId of bundle.testIds) result.add(memberId);
+  }
+  return [...result];
+}
+
 export function formulaToDerivationRule(
   formula: string,
   tests: Array<{ name: string; code: string }>

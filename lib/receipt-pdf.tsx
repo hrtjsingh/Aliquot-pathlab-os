@@ -3,24 +3,9 @@ import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import { formatInr } from "@/lib/money";
 import { encodeCode39 } from "@/lib/barcode";
 import type { ReportLayout } from "@/lib/report-layout";
+import type { ReceiptData } from "@/lib/cash-receipt";
 
-export type ReceiptData = {
-  labName: string;
-  address: string | null;
-  phone: string;
-  accessionNo: string;
-  date: string;
-  patientName: string;
-  age: string;
-  gender: string;
-  phoneNumber: string | null;
-  doctor: string | null;
-  lines: Array<{ name: string; amount: number }>;
-  totalCharge: number;
-  discount: number;
-  amountPaid: number;
-  due: number;
-};
+export type { ReceiptData };
 
 const styles = StyleSheet.create({
   page: { padding: 28, fontSize: 10, fontFamily: "Helvetica", color: "#14181c" },

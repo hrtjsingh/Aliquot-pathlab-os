@@ -59,6 +59,8 @@ export async function findReleasedOrderByToken(token: string) {
       branch: true,
       authorizedBy: true,
       results: { include: { test: true } },
+      orderTests: { select: { testId: true, sortOrder: true } },
+      orderPanels: { include: { panel: { include: { panelTests: { orderBy: { sortOrder: "asc" } } } } } },
     },
   });
 }

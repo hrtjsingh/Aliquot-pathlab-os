@@ -21,9 +21,9 @@ export default async function LabConfigPage() {
     <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-6">
       <PageHeader
         title="Lab configuration"
-        description="Set letterhead, accreditation, and the printed PDF layout used when a report is released."
+        description="Letterhead plus Aliquot report templates. Save the selected template to print it on released reports."
       />
-      <LabConfigForm branch={config.branch} layout={config.layout} />
+      <LabConfigForm branch={config.branch} layout={config.layout} templates={config.templates} />
     </div>
   );
 }

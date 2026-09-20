@@ -4,9 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { assertWritableLab, requireRole, requireTenant, requireWritableLab } from "@/lib/rbac";
 import { logAudit } from "@/lib/audit";
 import { resolveReferenceRange, formatRangeText, ageInDays } from "@/lib/reference-range";
-import { computeFlag, computeDelta, requiresCriticalCallback, parseRangeBounds } from "@/lib/flagging";
+import { computeFlag, computeDelta, requiresCriticalCallback, parseRangeBounds, computeQualitativeFlag } from "@/lib/flagging";
 import { runCalcRule } from "@/lib/calc-engine";
 import { generateInterpretiveComments } from "@/lib/interpretive-comments";
+import { roundNumeric, numericValuesEqual } from "@/lib/format-result";
 import { OrderStatus, Prisma, ResultStatus, Role } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { newPublicReportToken } from "@/lib/public-report";
@@ -53,6 +54,7 @@ export async function saveManualResult(params: {
   organismPanel?: unknown;
   qualitativeResult?: string;
   ctValue?: number;
+  interpretiveComment?: string | null;
   referenceRangeText?: string | null;
 }) {
   const user = await requireWritableLab();
@@ -87,7 +89,10 @@ export async function saveManualResult(params: {
     (c) => (!c.gender || c.gender === order.patient.gender) && rangeCtx.ageDays >= c.ageMinDays && rangeCtx.ageDays <= c.ageMaxDays
   ) ?? null;
 
-  const flag = params.numericValue != null ? computeFlag({ numericValue: params.numericValue, range: effectiveRange as typeof range, criticalThreshold: critical }) : "NORMAL";
+  const flag =
+    params.numericValue != null
+      ? computeFlag({ numericValue: params.numericValue, range: effectiveRange as typeof range, criticalThreshold: critical })
+      : computeQualitativeFlag(params.textValue, overrideText || formatRangeText(effectiveRange as typeof range));
 
   // Delta check against this patient's most recent prior RELEASED result for the same test.
   let deltaFlagged = false;
@@ -110,7 +115,7 @@ export async function saveManualResult(params: {
   const data = {
     orderId: params.orderId,
     testId: params.testId,
-    numericValue: params.numericValue ?? null,
+    numericValue: params.numericValue != null ? roundNumeric(params.numericValue, test.decimalPrecision) : null,
     textValue: params.textValue ?? null,
     unit: test.unit,
     referenceRangeText: overrideText || formatRangeText(range),
@@ -128,6 +133,8 @@ export async function saveManualResult(params: {
     organismPanel: params.organismPanel as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined,
     qualitativeResult: params.qualitativeResult ?? null,
     ctValue: params.ctValue ?? null,
+    interpretiveComment:
+      params.interpretiveComment !== undefined ? params.interpretiveComment : existing?.interpretiveComment ?? null,
   };
 
   const result = existing
@@ -157,6 +164,7 @@ export async function cascadeDerivedResults(orderId: string, vendorId: string) {
   const orderTests = await prisma.orderTest.findMany({
     where: { orderId },
     include: { test: { include: { referenceRanges: true, criticalThresholds: true } } },
+    orderBy: { sortOrder: "asc" },
   });
   const existingResults = await prisma.result.findMany({ where: { orderId } });
   const valueByCode = new Map<string, number | null | undefined>();
@@ -164,6 +172,8 @@ export async function cascadeDerivedResults(orderId: string, vendorId: string) {
     const r = existingResults.find((res) => res.testId === ot.testId);
     valueByCode.set(ot.test.code, r?.numericValue ?? null);
   }
+  const branch = await prisma.branch.findFirst({ where: { id: order.branchId }, select: { inrIsi: true } });
+  const calcConfig = { isi: branch?.inrIsi ?? 1 };
 
   for (let pass = 0; pass < 6; pass += 1) {
     let changed = false;
@@ -174,7 +184,7 @@ export async function cascadeDerivedResults(orderId: string, vendorId: string) {
       const inputs: Record<string, number | null | undefined> = {};
       for (const [code, value] of valueByCode) inputs[code] = value;
 
-      const calcResult = runCalcRule(test.derivationRule, inputs, calcCtx);
+      const calcResult = runCalcRule(test.derivationRule, inputs, calcCtx, calcConfig);
       if (calcResult.value == null) continue;
 
       const range = resolveReferenceRange(test.referenceRanges, rangeCtx);
@@ -185,11 +195,11 @@ export async function cascadeDerivedResults(orderId: string, vendorId: string) {
             rangeCtx.ageDays >= c.ageMinDays &&
             rangeCtx.ageDays <= c.ageMaxDays
         ) ?? null;
-      const flag = computeFlag({ numericValue: calcResult.value, range, criticalThreshold: critical });
-      const derivedValue = calcResult.value;
+      const derivedValue = roundNumeric(calcResult.value, test.decimalPrecision);
+      const flag = computeFlag({ numericValue: derivedValue, range, criticalThreshold: critical });
 
       const existing = existingResults.find((r) => r.testId === test.id);
-      if (existing && existing.numericValue === derivedValue) continue;
+      if (existing && numericValuesEqual(existing.numericValue, derivedValue, test.decimalPrecision)) continue;
 
       const data = {
         orderId,

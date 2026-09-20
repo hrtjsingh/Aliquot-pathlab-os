@@ -41,7 +41,9 @@ export function resolveReferenceRange(
   const ageOnly = ranges.find((r) => !r.pregnancyOnly && r.gender === null && ageMatches(r));
   if (ageOnly) return ageOnly;
 
-  const fallback = ranges.find((r) => r.isDefault);
+  // isDefault still has to match the patient's age band — adult catch-all
+  // must not be applied to infants (age-band low/high).
+  const fallback = ranges.find((r) => r.isDefault && ageMatches(r));
   return fallback ?? null;
 }
 
@@ -62,9 +64,13 @@ export function convertUnit(value: number, factor: number | null | undefined): n
 export function ageInDays(dob: Date | null, ageYearsFallback: number | null, ageMonthsFallback?: number | null): number {
   if (dob) {
     const ms = Date.now() - dob.getTime();
-    return Math.floor(ms / (1000 * 60 * 60 * 24));
+    return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+  }
+  if (ageYearsFallback != null && ageYearsFallback >= 0) {
+    const months = ageMonthsFallback != null && ageMonthsFallback > 0 ? ageMonthsFallback : 0;
+    return Math.round(ageYearsFallback * 365.25 + months * 30.44);
   }
   if (ageMonthsFallback != null && ageMonthsFallback > 0) return Math.round(ageMonthsFallback * 30.44);
-  if (ageYearsFallback != null && ageYearsFallback > 0) return Math.round(ageYearsFallback * 365.25);
-  return 365.25 * 30;
+  // Unknown age: do not invent 30 years. 0 matches neonatal/all-age bands only.
+  return 0;
 }

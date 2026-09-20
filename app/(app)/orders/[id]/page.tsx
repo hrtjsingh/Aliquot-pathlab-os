@@ -17,8 +17,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Download, FileText, QrCode } from "lucide-react";
 import { RemoveReportButton } from "./remove-report-button";
+import { BillButton } from "@/components/bill-button";
 import { ensurePublicReportToken, publicReportPath } from "@/lib/public-report";
 import { isCustomerVisibleReport } from "@/lib/workflow";
+import { assignPrintGroups } from "@/lib/result-groups";
 
 const NEXT_STEP: Record<string, string> = {
   ORDER_CREATED: "Select packages and tests, collect payment, then mark the sample collected and received.",
@@ -49,7 +51,8 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
     pregnancyTrimester: order.patient.pregnancyWeeks ? Math.ceil(order.patient.pregnancyWeeks / 13) : null,
   };
 
-  const rows = order.orderTests.map((ot) => {
+  const rows = assignPrintGroups(
+    order.orderTests.map((ot) => {
     const r = order.results.find((res) => res.testId === ot.testId);
     const catalogRange = formatRangeText(resolveReferenceRange(ot.test.referenceRanges, rangeCtx));
     return {
@@ -57,11 +60,18 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
       code: ot.test.code,
       name: ot.test.name,
       category: ot.test.category,
+      method: ot.test.method,
+      comment: r?.interpretiveComment ?? r?.pathologistNote ?? null,
       unit: ot.test.unit,
       dataType: ot.test.dataType,
       isDerived: ot.test.isDerived,
+      decimalPrecision: ot.test.decimalPrecision,
       numericValue: r?.numericValue ?? null,
       textValue: r?.textValue ?? null,
+      organismPanel: (r?.organismPanel as { organism?: string; colonyCount?: string; antibiotics?: Array<{ drug: string; result: string }> } | null) ?? null,
+      grossDescription: r?.grossDescription ?? null,
+      microscopicDescription: r?.microscopicDescription ?? null,
+      diagnosis: r?.diagnosis ?? null,
       referenceRangeText: r?.referenceRangeText || catalogRange,
       flag: r?.flag ?? "NORMAL",
       deltaFlag: r?.deltaFlag ?? false,
@@ -102,7 +112,9 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
         panels: ot.test.panelTests.map((pt) => ({ code: pt.panel.code, name: pt.panel.name })),
       },
     };
-  });
+    }),
+    order.orderPanels
+  );
 
   const hasOpenCritical = rows.some((r) => r.flag === "CRITICAL_LOW" || r.flag === "CRITICAL_HIGH");
   const criticalLogged = order.criticalCalls.length > 0;
@@ -126,6 +138,7 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
           <>
             <PriorityBadge priority={order.priority} />
             <StatusBadge status={order.status} />
+            <BillButton orderId={id} size="sm" variant="outline" />
             {isCustomerVisibleReport(order.status) ? (
               <>
                 <Link href={`/orders/${id}/report` as never} tabIndex={-1}>
